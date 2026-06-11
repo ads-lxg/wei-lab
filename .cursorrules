@@ -1,0 +1,76 @@
+---
+description: Lab OA 实验室办公系统后端开发规范
+globs: *.java
+alwaysApply: true
+---
+
+# Lab OA 实验室办公系统 - 后端开发规范
+
+## 技术栈
+- **框架**: Spring Boot 3.2.5 + MyBatis-Plus 3.5.6 + Sa-Token 1.38.0
+- **语言**: Java 17, 优先使用 Stream / Lambda / Record
+- **构建**: Maven 多模块, 父 POM 统一版本管理
+- **数据库**: MySQL 8.0 + Redis + Elasticsearch 8.x
+- **对象存储**: MinIO
+- **文档解析**: Apache Tika 2.9.2
+- **AI 框架**: LangChain4j 0.34.0
+- **工具库**: Lombok, Hutool, MapStruct, Knife4j
+
+## 编码规范
+
+### 命名规范
+- **类名**: PascalCase (大驼峰), 如 `UserService`, `LiteratureController`
+- **方法名/变量名**: camelCase (小驼峰), 如 `getUserById`, `userName`
+- **常量**: UPPER_SNAKE_CASE, 如 `MAX_RETRY_COUNT`
+- **包名**: 全小写, 如 `com.laboa.system.controller`
+- **接口**: 不使用 `I` 前缀, 如 `UserService`; 实现类加 `Impl` 后缀, 如 `UserServiceImpl`
+- **数据库表名**: 小写+下划线, 如 `sys_user`, `md_document`
+- **数据库字段**: 小写+下划线, 如 `create_time`, `update_time`
+
+### 代码风格
+- 4 空格缩进, 不使用 Tab; 左大括号不换行; 每行不超过 120 字符
+- import 不使用通配符 `*`; 不使用 Lombok 的 `var`/`val`
+- 实体类使用 `@Data` + `@TableName`; DTO/VO 使用 `@Data` 或 Java Record
+- 使用 `@Slf4j` 注解获取日志; 日志使用占位符: `log.info("用户ID: {}", userId)`
+- 异常日志必须包含堆栈: `log.error("处理失败", e)`
+
+### 分层架构 (MUST)
+- **Controller**: 只负责参数校验(`@Valid`) + 调用 Service + 返回 Result
+- **Service**: 接口 + Impl 实现, 处理业务逻辑, 使用 `@Transactional` 管理事务
+- **Mapper**: 继承 `BaseMapper<T>`, 只做数据访问, 不写业务逻辑
+- **Entity/DTO/VO**: 严格分层, Entity 不暴露到 Controller
+
+### 依赖注入
+- **必须使用构造器注入** (Lombok `@RequiredArgsConstructor`), 禁止 `@Autowired` 字段注入
+
+### 统一响应
+- 所有 Controller 返回 `Result<T>`, 包含 `code`, `message`, `data`
+- 异常使用 `@RestControllerAdvice` 全局处理
+
+### 安全红线 (NEVER)
+- NEVER 在日志中打印密码、Token 等敏感信息
+- NEVER 使用字符串拼接构建 SQL, 必须使用 MyBatis-Plus 的 QueryWrapper 或参数化查询
+- NEVER 捕获异常后不处理或仅 printStackTrace
+- NEVER 在 Controller 中写业务逻辑
+- NEVER 返回 Entity 到 Controller 层, 必须使用 VO
+
+### 数据库规范
+- 主键使用 `ASSIGN_ID` (雪花算法), 不使用自增
+- 所有表必须有 `create_time` 和 `update_time` 字段, 使用 MyBatis-Plus 自动填充
+- 逻辑删除使用 `@TableLogic`, 必须显式指定 `value` 和 `delval` 参数, 如 `@TableLogic(value = "0", delval = "1")`
+- 注意：`value` 是**未删除**的值，`delval` 是**已删除**的值，不要搞反
+- 全局配置: `logic-delete-field: deleted`, `logic-delete-value: 1`, `logic-not-delete-value: 0`
+- 数据库表 `deleted` 字段: `tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除'`
+- 逻辑删除规则: 0 = 未删除, 1 = 已删除; 查询时自动追加 `WHERE deleted = 0`; 删除时执行 `UPDATE SET deleted = 1`
+- **新增记录时必须显式设置 `entity.setDeleted(0)`**, 因为 MyBatis-Plus 的 `@TableLogic` 在 INSERT 时可能不会自动填充 `delval` 值, 导致字段为 NULL 覆盖数据库 DEFAULT 0, 从而查询不到记录
+- 索引命名: `idx_表名_字段名`
+
+### Jackson 配置 (MUST)
+- **Long 类型必须序列化为 String**: 雪花算法生成的 Long 型 ID 为 19 位数字，超过 JavaScript `Number.MAX_SAFE_INTEGER`（16 位），直接序列化为 JSON 数字会导致前端精度丢失
+- 全局配置（已实现在 `lab-oa-common/src/main/java/com/laboa/common/config/JacksonConfig.java`）：
+  ```java
+  builder.serializerByType(Long.class, ToStringSerializer.instance);
+  builder.serializerByType(Long.TYPE, ToStringSerializer.instance);
+  ```
+- 修复后 JSON 中 Long 字段输出为字符串，如 `"id": "2061608201997631489"`，前端 `JSON.parse()` 不会丢失精度
+- **排查方法**: 如果出现"数据库有记录但查询不到"，对比 MySQL 中真实 ID 和 MyBatis 日志中查询参数的 ID，后几位不同即是精度丢失
