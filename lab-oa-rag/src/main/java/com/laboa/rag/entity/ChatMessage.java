@@ -25,6 +25,9 @@ public class ChatMessage {
     /** 引用来源JSON */
     private String citationsJson;
 
+    /** 编辑时间（非空表示该消息被编辑过） */
+    private LocalDateTime editedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

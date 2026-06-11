@@ -9,6 +9,7 @@ import com.laboa.rag.dto.DocumentChunkDTO;
 import com.laboa.rag.service.ChatService;
 import com.laboa.rag.service.ChatService.ChatEvent;
 import com.laboa.rag.service.ChatService.ChatMessageVO;
+import com.laboa.rag.service.ChatService.SessionVO;
 import com.laboa.rag.service.RetrievalService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -192,5 +193,91 @@ public class RagController {
             log.error("向量检索失败: {}", e.getMessage(), e);
             return Result.error("向量检索失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 搜索会话（按标题或消息内容模糊匹配）
+     */
+    @GetMapping("/api/session/search")
+    public Result<List<SessionVO>> searchSessions(
+            @RequestParam("keyword") String keyword) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<SessionVO> sessions = chatService.searchSessions(userId, keyword);
+        return Result.success(sessions);
+    }
+
+    /**
+     * 导出会话
+     * @param format 导出格式: json(默认) / markdown
+     */
+    @GetMapping("/api/session/{sessionId}/export")
+    public Result<Map<String, String>> exportSession(
+            @PathVariable("sessionId") String sessionId,
+            @RequestParam(value = "format", defaultValue = "json") String format) {
+        String content = chatService.exportSession(sessionId, format);
+        return Result.success(Map.of("format", format, "content", content));
+    }
+
+    /**
+     * 修改用户消息并重新生成助手回复（SSE流式）
+     * 删除该消息之后的所有消息，修改该消息内容，重新触发RAG对话
+     */
+    @PostMapping(value = "/api/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> regenerateFromMessage(@RequestBody RegenerateRequest request) {
+        Long userId = StpUtil.getLoginIdAsLong();
+
+        if (request.getMessageId() == null || request.getMessageId().isBlank()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data("{\"error\":\"messageId不能为空\"}")
+                    .build());
+        }
+        if (request.getNewContent() == null || request.getNewContent().isBlank()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data("{\"error\":\"新消息内容不能为空\"}")
+                    .build());
+        }
+
+        Long msgId;
+        try {
+            msgId = Long.parseLong(request.getMessageId());
+        } catch (NumberFormatException e) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data("{\"error\":\"messageId格式错误\"}")
+                    .build());
+        }
+
+        return chatService.regenerateFromMessage(request.getSessionId(), msgId, request.getNewContent(), userId)
+                .map(event -> {
+                    if ("delta".equals(event.type())) {
+                        return ServerSentEvent.<String>builder()
+                                .event("delta")
+                                .data(event.content())
+                                .build();
+                    } else {
+                        return ServerSentEvent.<String>builder()
+                                .event("done")
+                                .data(buildDonePayload(event))
+                                .build();
+                    }
+                })
+                .startWith(Flux.defer(() -> Flux.just(
+                        ServerSentEvent.<String>builder()
+                                .event("info")
+                                .data("{\"status\":\"thinking\",\"message\":\"重新生成中...\"}")
+                                .build()
+                )));
+    }
+
+    /**
+     * 重新生成请求DTO
+     */
+    @lombok.Data
+    public static class RegenerateRequest {
+        private String sessionId;
+        private String messageId;
+        private String newContent;
     }
 }
