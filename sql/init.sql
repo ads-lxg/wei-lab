@@ -149,7 +149,8 @@ CREATE TABLE `literature` (
     `authors` varchar(500) DEFAULT NULL,
     `abstract` varchar(2000) DEFAULT NULL COMMENT '摘要，限制2000字符以内',
     `keywords` varchar(500) DEFAULT NULL,
-    `publish_year` int DEFAULT NULL,
+    `publish_date` date DEFAULT NULL COMMENT '发表日期',
+    `source_journal` varchar(300) DEFAULT NULL COMMENT '来源期刊',
     `doi` varchar(200) DEFAULT NULL,
     `file_id` bigint DEFAULT NULL COMMENT '关联 minio_file.id',
     `file_type` varchar(20) DEFAULT NULL COMMENT '文件类型: pdf/docx/md/txt',
@@ -166,7 +167,7 @@ CREATE TABLE `literature` (
     KEY `idx_title` (`title`),
     KEY `idx_authors` (`authors`(255)),
     KEY `idx_keywords` (`keywords`(255)),
-    KEY `idx_publish_year` (`publish_year`),
+    KEY `idx_publish_date` (`publish_date`),
     KEY `idx_uploader_id` (`uploader_id`),
     KEY `idx_deleted` (`deleted`),
     FOREIGN KEY (`file_id`) REFERENCES `minio_file`(`id`) ON DELETE SET NULL

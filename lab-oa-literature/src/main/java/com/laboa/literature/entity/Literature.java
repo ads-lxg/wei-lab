@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -26,7 +27,11 @@ public class Literature {
 
     private String keywords;
 
-    private Integer publishYear;
+    /** 发表日期 */
+    private LocalDate publishDate;
+
+    /** 来源期刊 */
+    private String sourceJournal;
 
     private String doi;
 

@@ -32,7 +32,7 @@ public class AuthController {
     public Result<LoginVO> login(@Valid @RequestBody LoginDTO dto) {
         LoginVO loginVO = sysUserService.login(dto);
         StpUtil.login(loginVO.getUser().getId());
-        loginVO.setToken(StpUtil.getTokenInfo().getTokenValue());
+        loginVO.setToken(StpUtil.getTokenValue());
         return Result.success(loginVO);
     }
 

@@ -42,10 +42,10 @@ public class ChatServiceImpl implements ChatService {
     private final ChatMessageMapper chatMessageMapper;
     private final ObjectMapper objectMapper;
 
-    @Value("${rag.system-prompt:你是一个实验室OA系统的智能助手。请基于以下参考资料和你的知识，全面、详细地回答用户的问题。参考资料中有相关内容时，请用[编号]标注出处；参考资料没有覆盖的部分，你可以结合自身知识进行补充和扩展。如果参考资料与问题完全无关，请直接根据你的知识回答。保持专业、详细的风格。}")
+    @Value("${rag.system-prompt:你是一个智能助手，兼具专业知识与灵活应变能力。\n\n## 回答规则\n1. 当参考资料中包含与问题相关的内容时，优先基于参考资料回答，并用[编号]标注出处。在引用基础上可适当补充专业背景和延伸解释，使回答更完整。\n2. 当参考资料中没有直接相关内容，但你自身知识可以回答时，直接给出专业、详细的回答。\n3. 当问题涉及操作指引、流程说明等场景时，给出清晰的步骤式回答。\n4. 保持回答结构清晰，适当使用标题、列表、加粗等格式提升可读性。\n5. 如果对问题不确定，坦诚说明，不要编造信息。}")
     private String ragSystemPrompt;
 
-    @Value("${rag.pure-chat-prompt:你是一个实验室OA系统的智能助手。请用专业、简洁的风格回答用户的问题。}")
+    @Value("${rag.pure-chat-prompt:你是一个智能助手，擅长用专业、清晰的方式回答各类问题。回答时注意结构化表达，必要时使用列表和分步说明。如果不确定，请坦诚说明。}")
     private String pureChatPrompt;
 
     @Value("${rag.top-k:5}")

@@ -2,6 +2,8 @@ package com.laboa.literature.dto;
 
 import lombok.Data;
 
+import java.time.LocalDate;
+
 @Data
 public class LiteraturePageDTO {
 
@@ -13,5 +15,9 @@ public class LiteraturePageDTO {
 
     private String author;
 
-    private Integer publishYear;
+    /** 发表日期筛选（精确匹配） */
+    private LocalDate publishDate;
+
+    /** 来源期刊筛选（模糊匹配） */
+    private String sourceJournal;
 }
