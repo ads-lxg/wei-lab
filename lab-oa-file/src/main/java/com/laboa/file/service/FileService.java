@@ -9,6 +9,11 @@ public interface FileService {
 
     MinioFile uploadFile(MultipartFile file, Long uploaderId);
 
+    /**
+     * 从字节数组上传文件
+     */
+    MinioFile uploadBytes(String fileName, byte[] content, String contentType, Long uploaderId);
+
     String getPresignedUrl(Long fileId);
 
     String getPresignedUrl(Long fileId, Integer expiryMinutes);
@@ -24,4 +29,9 @@ public interface FileService {
     MinioFile getById(Long fileId);
 
     void deleteFile(Long fileId);
+
+    /**
+     * 获取文件的文本内容（适用于文本类文件如md/txt）
+     */
+    String getFileContent(Long fileId);
 }

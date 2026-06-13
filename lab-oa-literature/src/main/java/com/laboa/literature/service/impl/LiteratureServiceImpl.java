@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -77,21 +79,24 @@ public class LiteratureServiceImpl implements LiteratureService {
         }
         literatureMapper.insert(literature);
 
-        // 异步发布文档创建事件（不阻塞上传响应）
-        // 使用 CompletableFuture 确保 publishEvent 在独立线程执行，
-        // 避免 Spring 事件分发机制阻塞 HTTP 响应
+        // 事务提交后异步发布文档创建事件（不阻塞上传响应）
         final boolean isRagSource = literature.getRagSource() == 1;
         final Long finalDocId = literature.getId();
         final Long finalFileId = fileId;
         final String finalOriginalName = originalName;
-        log.info("异步发布DocumentCreatedEvent: docId={}, fileId={}, ragSource={}, fileName={}, contentSize={}",
+        log.info("注册事务提交后事件发布: docId={}, fileId={}, ragSource={}, fileName={}, contentSize={}",
                 finalDocId, finalFileId, isRagSource, finalOriginalName, fileBytes.length);
-        CompletableFuture.runAsync(() -> {
-            eventPublisher.publishEvent(new DocumentCreatedEvent(
-                    this, MqConstants.DOC_TYPE_LITERATURE, finalDocId, finalFileId,
-                    finalOriginalName, isRagSource, fileBytes
-            ));
-            log.info("DocumentCreatedEvent已发布: docId={}", finalDocId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                CompletableFuture.runAsync(() -> {
+                    eventPublisher.publishEvent(new DocumentCreatedEvent(
+                            LiteratureServiceImpl.this, MqConstants.DOC_TYPE_LITERATURE, finalDocId, finalFileId,
+                            finalOriginalName, isRagSource, fileBytes
+                    ));
+                    log.info("DocumentCreatedEvent已发布: docId={}", finalDocId);
+                });
+            }
         });
 
         return literature;
@@ -115,8 +120,8 @@ public class LiteratureServiceImpl implements LiteratureService {
         if (dto.getAuthor() != null && !dto.getAuthor().isBlank()) {
             wrapper.like(Literature::getAuthors, dto.getAuthor());
         }
-        if (dto.getPublishYear() != null) {
-            wrapper.eq(Literature::getPublishYear, dto.getPublishYear());
+        if (dto.getPublishDate() != null) {
+            wrapper.eq(Literature::getPublishDate, dto.getPublishDate());
         }
         wrapper.orderByDesc(Literature::getCreateTime);
         IPage<Literature> result = literatureMapper.selectPage(page, wrapper);

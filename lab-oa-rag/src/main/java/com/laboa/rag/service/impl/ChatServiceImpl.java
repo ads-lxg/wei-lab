@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.laboa.common.exception.BusinessException;
 import com.laboa.rag.dto.Citation;
 import com.laboa.rag.dto.DocumentChunkDTO;
 import com.laboa.rag.entity.ChatMessage;
@@ -51,6 +52,10 @@ public class ChatServiceImpl implements ChatService {
     @Value("${rag.top-k:5}")
     private int topK;
 
+    /** 检索分数阈值：低于最高分 * 此比例的结果将被过滤 */
+    @Value("${rag.score-ratio-threshold:0.5}")
+    private double scoreRatioThreshold;
+
     private static final String DEFAULT_SESSION_TITLE = "新对话";
 
     @Override
@@ -73,10 +78,12 @@ public class ChatServiceImpl implements ChatService {
      */
     private Flux<ChatEvent> doRagPipeline(String sid, String message, boolean updateTitle) {
         // 1. 尝试检索相关文档（失败则降级为纯对话）
+        // 初始检索 2*topK 条，再按分数阈值过滤
         List<DocumentChunkDTO> relevantDocs = Collections.emptyList();
         boolean isRagAvailable = false;
         try {
-            relevantDocs = retrievalService.hybridRetrieve(message, topK);
+            List<DocumentChunkDTO> rawDocs = retrievalService.hybridRetrieve(message, topK * 2);
+            relevantDocs = filterByScore(rawDocs);
             isRagAvailable = !relevantDocs.isEmpty();
         } catch (Exception e) {
             log.warn("RAG检索失败，降级为纯LLM对话: {}", e.getMessage());
@@ -92,7 +99,7 @@ public class ChatServiceImpl implements ChatService {
                 if (excerpt != null && excerpt.length() > 200) {
                     excerpt = excerpt.substring(0, 200) + "...";
                 }
-                builtCitations.add(new Citation(i + 1, doc.getFileName(), doc.getSourcePath(), doc.getChunkIndex(), excerpt));
+                builtCitations.add(new Citation(i + 1, doc.getFileName(), doc.getSourcePath(), doc.getChunkIndex(), excerpt, doc.getDocType(), doc.getDocId()));
             }
         }
         final List<Citation> citations = builtCitations;
@@ -169,12 +176,34 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    public List<SessionVO> listSessions(Long userId) {
+        List<ChatSession> sessions = chatSessionMapper.selectList(
+                new LambdaQueryWrapper<ChatSession>()
+                        .eq(ChatSession::getUserId, userId)
+                        .orderByDesc(ChatSession::getUpdateTime)
+        );
+        List<SessionVO> result = new ArrayList<>();
+        for (ChatSession s : sessions) {
+            Long msgCount = chatMessageMapper.selectCount(
+                    new LambdaQueryWrapper<ChatMessage>()
+                            .eq(ChatMessage::getSessionId, s.getSessionId())
+            );
+            result.add(new SessionVO(
+                    s.getSessionId(),
+                    s.getTitle(),
+                    s.getCreateTime() != null ? s.getCreateTime().toString() : "",
+                    msgCount
+            ));
+        }
+        return result;
+    }
+
+    @Override
     public List<SessionVO> searchSessions(Long userId, String keyword) {
         // 1. 按标题模糊匹配
         List<ChatSession> titleMatches = chatSessionMapper.selectList(
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getUserId, userId)
-                        .eq(ChatSession::getDeleted, 0)
                         .like(ChatSession::getTitle, keyword)
                         .orderByDesc(ChatSession::getUpdateTime)
         );
@@ -232,6 +261,20 @@ public class ChatServiceImpl implements ChatService {
         }
 
         return result;
+    }
+
+    @Override
+    public void deleteSession(String sessionId, Long userId) {
+        ChatSession session = chatSessionMapper.selectOne(
+                new LambdaQueryWrapper<ChatSession>()
+                        .eq(ChatSession::getSessionId, sessionId)
+                        .eq(ChatSession::getUserId, userId)
+        );
+        if (session == null) {
+            throw new BusinessException("会话不存在");
+        }
+        // 使用 deleteById 触发 @TableLogic 逻辑删除
+        chatSessionMapper.deleteById(session.getId());
     }
 
     @Override
@@ -355,8 +398,22 @@ public class ChatServiceImpl implements ChatService {
     }
 
     /**
-     * 格式化检索结果为带编号的上下文文本
+     * 根据分数阈值过滤检索结果：保留分数 >= 最高分 * scoreRatioThreshold 的结果
+     * 这样高分查询可以返回更多相关结果，低相关性的查询自动减少返回数量
      */
+    private List<DocumentChunkDTO> filterByScore(List<DocumentChunkDTO> docs) {
+        if (docs.isEmpty()) return docs;
+        double maxScore = docs.stream().mapToDouble(DocumentChunkDTO::getScore).max().orElse(0);
+        if (maxScore <= 0) return docs; // 无分数信息时不过滤
+        double threshold = maxScore * scoreRatioThreshold;
+        List<DocumentChunkDTO> filtered = docs.stream()
+                .filter(d -> d.getScore() >= threshold)
+                .toList();
+        log.info("分数过滤: 总数={}, 最高分={}, 阈值={}, 保留={}",
+                docs.size(), String.format("%.4f", maxScore), String.format("%.4f", threshold), filtered.size());
+        return filtered;
+    }
+
     private String formatContext(List<DocumentChunkDTO> docs) {
         if (docs.isEmpty()) {
             return "未找到相关参考资料。";

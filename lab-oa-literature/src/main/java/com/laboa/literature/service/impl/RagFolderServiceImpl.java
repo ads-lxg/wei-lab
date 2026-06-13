@@ -6,7 +6,9 @@ import com.laboa.common.exception.ErrorCode;
 import com.laboa.literature.dto.FolderCreateDTO;
 import com.laboa.literature.dto.FolderMoveDTO;
 import com.laboa.literature.dto.FolderUpdateDTO;
+import com.laboa.literature.entity.Literature;
 import com.laboa.literature.entity.RagFolder;
+import com.laboa.literature.mapper.LiteratureMapper;
 import com.laboa.literature.mapper.RagFolderMapper;
 import com.laboa.literature.service.RagFolderService;
 import com.laboa.literature.util.FolderTreeBuilder;
@@ -17,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 文献目录服务实现
@@ -33,18 +37,55 @@ import java.util.List;
 public class RagFolderServiceImpl implements RagFolderService {
 
     private final RagFolderMapper ragFolderMapper;
+    private final LiteratureMapper literatureMapper;
 
     // ==================== 查询目录树 ====================
 
     @Override
     public List<FolderTreeVO> tree() {
-        // 一次查询全部目录，内存中构建树
+        // 1. 一次查询全部目录，内存中构建树
         List<RagFolder> allFolders = ragFolderMapper.selectList(
                 new LambdaQueryWrapper<RagFolder>()
                         .orderByAsc(RagFolder::getSortOrder)
                         .orderByAsc(RagFolder::getId)
         );
-        return FolderTreeBuilder.build(allFolders);
+        List<FolderTreeVO> tree = FolderTreeBuilder.build(allFolders);
+
+        // 2. 批量查询所有未删除文献，按folderId分组
+        List<Literature> allDocs = literatureMapper.selectList(
+                new LambdaQueryWrapper<Literature>()
+                        .select(Literature::getId, Literature::getFileName, Literature::getTitle,
+                                Literature::getFileType, Literature::getParseStatus, Literature::getFolderId)
+                        .isNotNull(Literature::getFolderId)
+                        .orderByDesc(Literature::getCreateTime)
+        );
+        Map<Long, List<Literature>> docsByFolder = allDocs.stream()
+                .collect(Collectors.groupingBy(Literature::getFolderId));
+
+        // 3. 将文献信息填充到树节点
+        fillDocuments(tree, docsByFolder);
+
+        return tree;
+    }
+
+    /**
+     * 递归填充每个目录节点的文献列表
+     */
+    private void fillDocuments(List<FolderTreeVO> nodes, Map<Long, List<Literature>> docsByFolder) {
+        if (nodes == null) return;
+        for (FolderTreeVO node : nodes) {
+            List<Literature> docs = docsByFolder.getOrDefault(node.getId(), List.of());
+            for (Literature doc : docs) {
+                FolderTreeVO.FolderDocumentVO docVO = new FolderTreeVO.FolderDocumentVO();
+                docVO.setId(doc.getId());
+                docVO.setFileName(doc.getFileName());
+                docVO.setTitle(doc.getTitle());
+                docVO.setFileType(doc.getFileType());
+                docVO.setParseStatus(doc.getParseStatus());
+                node.getDocuments().add(docVO);
+            }
+            fillDocuments(node.getChildren(), docsByFolder);
+        }
     }
 
     // ==================== 创建目录 ====================

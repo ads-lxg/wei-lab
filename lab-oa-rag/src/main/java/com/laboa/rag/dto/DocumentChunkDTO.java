@@ -26,5 +26,8 @@ public class DocumentChunkDTO {
 
     private String docType;
 
-    private Long docId;
+    private String docId;
+
+    /** 检索得分 */
+    private double score;
 }

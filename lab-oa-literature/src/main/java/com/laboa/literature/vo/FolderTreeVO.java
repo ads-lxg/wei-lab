@@ -33,4 +33,30 @@ public class FolderTreeVO {
 
     @Schema(description = "子目录列表")
     private List<FolderTreeVO> children = new ArrayList<>();
+
+    @Schema(description = "该目录下的文献列表（仅包含基本信息）")
+    private List<FolderDocumentVO> documents = new ArrayList<>();
+
+    /**
+     * 目录下文献简要信息
+     */
+    @Data
+    @Schema(description = "目录下文献简要信息")
+    public static class FolderDocumentVO {
+
+        @Schema(description = "文献ID")
+        private Long id;
+
+        @Schema(description = "文件名")
+        private String fileName;
+
+        @Schema(description = "标题")
+        private String title;
+
+        @Schema(description = "文件类型")
+        private String fileType;
+
+        @Schema(description = "解析状态")
+        private String parseStatus;
+    }
 }

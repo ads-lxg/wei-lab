@@ -25,4 +25,10 @@ public class Citation {
 
     /** 摘录片段 */
     private String excerpt;
+
+    /** 文档类型: literature / doc */
+    private String docType;
+
+    /** 文档ID（文献ID或内部文档ID），字符串避免前端精度丢失 */
+    private String docId;
 }

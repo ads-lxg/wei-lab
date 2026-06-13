@@ -83,6 +83,46 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    @Transactional
+    public MinioFile uploadBytes(String fileName, byte[] content, String contentType, Long uploaderId) {
+        try {
+            String extension = "";
+            if (fileName != null && fileName.contains(".")) {
+                extension = fileName.substring(fileName.lastIndexOf("."));
+            }
+            String storedName = UUID.randomUUID().toString() + extension;
+
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(minioConfig.getBucket())
+                    .object(storedName)
+                    .stream(new ByteArrayInputStream(content), content.length, -1)
+                    .contentType(contentType)
+                    .build());
+
+            String md5 = DigestUtil.md5Hex(content);
+
+            MinioFile minioFile = new MinioFile();
+            minioFile.setOriginalName(fileName);
+            minioFile.setStoredName(storedName);
+            minioFile.setBucket(minioConfig.getBucket());
+            minioFile.setFilePath(storedName);
+            minioFile.setFileSize((long) content.length);
+            minioFile.setMimeType(contentType);
+            minioFile.setMd5(md5);
+            minioFile.setUploaderId(uploaderId);
+            minioFile.setStatus(1);
+            minioFile.setDeleted(0);
+            minioFileMapper.insert(minioFile);
+
+            log.info("File uploaded from bytes: {} -> {}, size: {}", fileName, storedName, content.length);
+            return minioFile;
+        } catch (Exception e) {
+            log.error("File upload from bytes failed", e);
+            throw new BusinessException("文件上传失败");
+        }
+    }
+
+    @Override
     public String getPresignedUrl(Long fileId) {
         return getPresignedUrl(fileId, 60);
     }
@@ -227,5 +267,19 @@ public class FileServiceImpl implements FileService {
             log.error("Failed to remove file from MinIO: {}", minioFile.getStoredName(), e);
         }
         log.info("File deleted: {}", fileId);
+    }
+
+    @Override
+    public String getFileContent(Long fileId) {
+        MinioFile minioFile = getById(fileId);
+        try (InputStream is = minioClient.getObject(io.minio.GetObjectArgs.builder()
+                .bucket(minioFile.getBucket())
+                .object(minioFile.getStoredName())
+                .build())) {
+            return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.error("Failed to read file content: {}", fileId, e);
+            throw new BusinessException("读取文件内容失败");
+        }
     }
 }

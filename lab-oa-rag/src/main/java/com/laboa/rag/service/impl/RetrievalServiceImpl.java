@@ -53,13 +53,13 @@ public class RetrievalServiceImpl implements RetrievalService {
 
         float[] queryVector = embeddingService.embed(query);
         if (queryVector.length == 0) {
-            // Embedding 不可用 → 降级为纯 BM25 文本检索
             log.info("Embedding API 不可用，降级为 BM25 文本检索 (doc_chunks)");
             return bm25Search(query, topK);
         }
 
+        // 使用 RRF (Reciprocal Rank Fusion) 混合检索策略
+        // 分别执行向量检索和BM25检索，再通过RRF融合排序
         try {
-            // 混合检索: kNN 向量检索 + BM25 关键词检索
             SearchResponse<Map> response = elasticsearchClient.search(s -> s
                     .index(INDEX_NAME)
                     .size(topK)
@@ -68,6 +68,13 @@ public class RetrievalServiceImpl implements RetrievalService {
                                     .should(knnQuery(queryVector))
                                     .should(bm25Query(query))
                                     .minimumShouldMatch("1")
+                            )
+                    )
+                    // 使用 RRF 进行重排：将向量检索和BM25检索的排名融合
+                    .rank(r -> r
+                            .rrf(rrf -> rrf
+                                    .windowSize(topK * 3L)
+                                    .rankConstant(60L)
                             )
                     ), Map.class);
 
@@ -82,7 +89,47 @@ public class RetrievalServiceImpl implements RetrievalService {
         } catch (IOException e) {
             log.warn("混合检索IO异常，降级为纯BM25检索: {}", e.getMessage());
             return bm25Search(query, topK);
+        } catch (Exception e) {
+            // RRF 可能不被当前 ES 版本支持，降级为手动 RRF
+            log.warn("RRF检索异常，降级为手动RRF融合: {}", e.getMessage());
+            return manualRRF(query, queryVector, topK);
         }
+    }
+
+    /**
+     * 手动 RRF 融合：分别执行向量检索和BM25检索，通过RRF公式融合排序
+     * RRF score = Σ 1/(k + rank_i)，k=60
+     */
+    private List<DocumentChunkDTO> manualRRF(String query, float[] queryVector, int topK) {
+        final int RRF_K = 60;
+        int candidateSize = Math.max(topK * 3, 20);
+
+        List<DocumentChunkDTO> vectorResults = knnSearch(queryVector, candidateSize);
+        List<DocumentChunkDTO> bm25Results = bm25Search(query, candidateSize);
+
+        // 用 id 作为 key，计算 RRF 分数
+        Map<String, Double> rrfScores = new java.util.HashMap<>();
+        Map<String, DocumentChunkDTO> dtoMap = new java.util.HashMap<>();
+
+        for (int i = 0; i < vectorResults.size(); i++) {
+            DocumentChunkDTO dto = vectorResults.get(i);
+            String id = dto.getId();
+            rrfScores.merge(id, 1.0 / (RRF_K + i + 1), Double::sum);
+            dtoMap.putIfAbsent(id, dto);
+        }
+        for (int i = 0; i < bm25Results.size(); i++) {
+            DocumentChunkDTO dto = bm25Results.get(i);
+            String id = dto.getId();
+            rrfScores.merge(id, 1.0 / (RRF_K + i + 1), Double::sum);
+            dtoMap.putIfAbsent(id, dto);
+        }
+
+        // 按 RRF 分数降序排列
+        return rrfScores.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .limit(topK)
+                .map(e -> dtoMap.get(e.getKey()))
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
@@ -132,19 +179,21 @@ public class RetrievalServiceImpl implements RetrievalService {
                 .knn(k -> k
                         .field("embedding")
                         .queryVector(vectorList)
-                        .numCandidates(50L)
+                        .numCandidates(100L)
                 )
         );
     }
 
     /**
-     * 构建 BM25 关键词查询
+     * 构建 BM25 关键词查询 - 多字段匹配，提高召回率
      */
     private Query bm25Query(String query) {
         return Query.of(q -> q
-                .match(m -> m
-                        .field("content")
+                .multiMatch(m -> m
+                        .fields("content", "fileName^2")
                         .query(query)
+                        .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
+                        .minimumShouldMatch("70%")
                 )
         );
     }
@@ -190,7 +239,8 @@ public class RetrievalServiceImpl implements RetrievalService {
             dto.setSourcePath(String.valueOf(source.getOrDefault("sourcePath", "")));
             dto.setChunkIndex(source.get("chunkIndex") != null ? ((Number) source.get("chunkIndex")).intValue() : 0);
             dto.setDocType(String.valueOf(source.getOrDefault("docType", "")));
-            dto.setDocId(source.get("docId") != null ? ((Number) source.get("docId")).longValue() : null);
+            dto.setDocId(source.get("docId") != null ? String.valueOf(source.get("docId")) : null);
+            dto.setScore(hit.score() != null ? hit.score() : 0.0);
             results.add(dto);
         }
         return results;

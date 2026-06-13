@@ -1,0 +1,2340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文献管理 - 接口测试</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f7fa; --card-bg: #fff; --border: #e4e7ed;
+    --text: #303133; --text-secondary: #909399; --primary: #409eff;
+    --primary-light: #ecf5ff; --success: #67c23a; --warning: #e6a23c;
+    --danger: #f56c6c; --radius: 8px; --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); }
+
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: #fff; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .subtitle { font-size: 12px; opacity: 0.7; margin-top: 3px; }
+  .server-config { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.1); padding: 6px 14px; border-radius: 20px; }
+  .server-config input { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 13px; width: 200px; }
+
+  .container { display: flex; gap: 16px; padding: 16px; height: calc(100vh - 80px); }
+
+  /* Left Panel - Folder Tree */
+  .left-panel { width: 280px; min-width: 280px; background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+  .panel-header { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+  .panel-header button { background: var(--primary); color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .panel-header button:hover { opacity: 0.85; }
+  .tree-container { flex: 1; overflow-y: auto; padding: 8px; }
+  .tree-node { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; user-select: none; }
+  .tree-node:hover { background: var(--primary-light); }
+  .tree-node.active { background: var(--primary); color: #fff; }
+  .tree-node .arrow { width: 16px; text-align: center; font-size: 10px; transition: transform 0.2s; }
+  .tree-node .arrow.expanded { transform: rotate(90deg); }
+  .tree-doc-node[draggable="true"] { cursor: grab; }
+  .tree-doc-node[draggable="true"]:active { cursor: grabbing; }
+  .tree-children { padding-left: 20px; }
+  .tree-children.hidden { display: none; }
+
+  /* Right Panel */
+  .right-panel { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+
+  /* Login Bar */
+  .login-bar { background: var(--card-bg); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .login-bar input, .login-bar select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
+  .login-bar input { width: 130px; }
+  .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-warning { background: var(--warning); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .status-tag { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .status-online { background: #e1f3d8; color: var(--success); }
+  .status-offline { background: #fde2e2; color: var(--danger); }
+
+  /* Markdown rendering in chat bubbles */
+  .md-content h1,.md-content h2,.md-content h3,.md-content h4 { margin:8px 0 4px; font-weight:600; }
+  .md-content h1 { font-size:18px; } .md-content h2 { font-size:16px; } .md-content h3 { font-size:14px; }
+  .md-content p { margin:4px 0; line-height:1.7; }
+  .md-content ul,.md-content ol { margin:4px 0; padding-left:20px; }
+  .md-content li { margin:2px 0; }
+  .md-content code { background:#f0f0f0; padding:1px 5px; border-radius:3px; font-size:12px; font-family:Consolas,monospace; }
+  .md-content pre { background:#f5f5f5; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; }
+  .md-content pre code { background:none; padding:0; font-size:12px; }
+  .md-content blockquote { border-left:3px solid var(--primary); padding-left:10px; margin:6px 0; color:var(--text-secondary); }
+  .md-content table { border-collapse:collapse; margin:6px 0; font-size:12px; }
+  .md-content th,.md-content td { border:1px solid var(--border); padding:4px 8px; }
+  .md-content th { background:#f5f5f5; }
+  .md-content a { color:var(--primary); text-decoration:none; }
+  .md-content a:hover { text-decoration:underline; }
+  .citation-card { display:inline-flex; align-items:center; gap:6px; background:#f0f7ff; border:1px solid #d0e3f7; border-radius:6px; padding:4px 10px; margin:3px; font-size:11px; }
+  .citation-card .cite-num { background:var(--primary); color:#fff; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; flex-shrink:0; }
+  .citation-card a { color:var(--primary); text-decoration:none; font-weight:500; }
+  .citation-card a:hover { text-decoration:underline; }
+
+  /* Tabs */
+  .tab-bar { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; overflow: hidden; }
+  .tab-item { padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab-item:hover { background: var(--primary-light); }
+  .tab-item.active { color: var(--primary); border-bottom-color: var(--primary); background: var(--primary-light); }
+
+  /* Content Area */
+  .content-area { flex: 1; background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+  .tab-content { display: none; flex: 1; overflow-y: auto; padding: 16px; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 12px; }
+
+  /* Form */
+  .form-group { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .form-group label { min-width: 80px; font-size: 13px; font-weight: 500; text-align: right; }
+  .form-group input, .form-group select, .form-group textarea { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
+  .form-group textarea { min-height: 60px; resize: vertical; }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th { background: #f5f7fa; padding: 8px 10px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  .data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .data-table tr:hover { background: var(--primary-light); }
+  .data-table .actions { white-space: nowrap; }
+
+  /* Pagination */
+  .pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; font-size: 13px; }
+  .pagination .page-btns { display: flex; gap: 4px; }
+  .pagination .page-btns button { padding: 4px 10px; border: 1px solid var(--border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .pagination .page-btns button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .pagination .page-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Result */
+  .result-box { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .result-box.success { border-left: 3px solid var(--success); }
+  .result-box.error { border-left: 3px solid var(--danger); }
+
+  /* Guide */
+  .guide-section { padding: 20px; }
+  .guide-section h3 { margin: 16px 0 8px; color: var(--primary); font-size: 16px; }
+  .guide-section h4 { margin: 12px 0 6px; font-size: 14px; }
+  .guide-section p, .guide-section li { font-size: 13px; line-height: 1.8; color: var(--text-secondary); }
+  .guide-section ul { padding-left: 20px; }
+  .guide-section code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  .guide-section table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .guide-section table th, .guide-section table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .guide-section table th { background: #f5f7fa; }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 8px; padding: 24px; width: 500px; max-width: 90vw; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.2); }
+  .modal h3 { margin-bottom: 16px; }
+  .modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* Checkbox list */
+  .checkbox-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; }
+  .checkbox-item { padding: 4px 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .checkbox-item:hover { background: var(--primary-light); }
+
+  .selected-info { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .empty-tip { text-align: center; padding: 40px; color: var(--text-secondary); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>文献管理模块 - 接口测试</h1>
+    <div class="subtitle">文献管理 + 目录树 联合测试</div>
+  </div>
+  <div class="server-config">
+    <label>服务器:</label>
+    <input type="text" id="serverUrl" value="http://localhost:8080">
+  </div>
+</div>
+
+<div class="container">
+  <!-- Left: Folder Tree -->
+  <div class="left-panel">
+    <div class="panel-header">
+      <span>目录树</span>
+      <button onclick="loadFolderTree()">刷新</button>
+    </div>
+    <div class="tree-container" id="folderTree">
+      <div class="empty-tip">请先登录后加载目录树</div>
+    </div>
+  </div>
+
+  <!-- Right: Main Content -->
+  <div class="right-panel">
+    <!-- Login Bar -->
+    <div class="login-bar">
+      <label>用户:</label>
+      <select id="loginUser">
+        <option value="admin">admin (管理员)</option>
+        <option value="teacher">teacher (教师)</option>
+        <option value="student">student (学生)</option>
+        <option value="guest">guest (游客)</option>
+      </select>
+      <label>密码:</label>
+      <input type="password" id="loginPass" value="123456">
+      <button class="btn btn-primary" onclick="login()">登录</button>
+      <button class="btn btn-danger" onclick="logout()">登出</button>
+      <span id="loginStatus" class="status-tag status-offline">未登录</span>
+      <span id="roleInfo" style="font-size:12px;color:var(--text-secondary)"></span>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <div class="tab-item active" data-tab="documents" onclick="switchTab('documents')">文献列表</div>
+      <div class="tab-item" data-tab="upload" onclick="switchTab('upload')">上传文献</div>
+      <div class="tab-item" data-tab="batch-upload" onclick="switchTab('batch-upload')">批量上传</div>
+      <div class="tab-item" data-tab="search" onclick="switchTab('search')">文献搜索</div>
+      <div class="tab-item" data-tab="recycle" onclick="switchTab('recycle')">回收站</div>
+      <div class="tab-item" data-tab="rag-chat" onclick="switchTab('rag-chat')">RAG对话</div>
+      <div class="tab-item" data-tab="es-debug" onclick="switchTab('es-debug')">ES验证</div>
+      <div class="tab-item" data-tab="internal-doc" onclick="switchTab('internal-doc')">内部文档</div>
+      <div class="tab-item" data-tab="guide" onclick="switchTab('guide')">测试指南</div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="content-area">
+
+      <!-- Tab: Documents List -->
+      <div class="tab-content active" id="tab-documents">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:600;">当前目录:</span>
+          <span id="currentFolderName" style="font-size:13px;color:var(--primary);">未选择</span>
+          <input type="text" id="docKeyword" placeholder="搜索关键词..." style="padding:4px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:180px;">
+          <button class="btn btn-primary btn-sm" onclick="loadDocuments()">查询</button>
+          <button class="btn btn-danger btn-sm" onclick="batchDeleteDocs()" id="batchDeleteBtn" disabled>批量删除</button>
+          <button class="btn btn-warning btn-sm" onclick="showBatchMoveModal()" id="batchMoveBtn" disabled>批量移动</button>
+          <button class="btn btn-success btn-sm" onclick="batchDownloadDocs()" id="batchDownloadBtn" disabled>批量下载ZIP</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAllDocs" onchange="toggleSelectAll()"></th>
+                <th>ID</th><th>文件名</th><th>标题</th><th>作者</th><th>来源期刊</th>
+                <th>上传时间</th><th>下载次数</th><th>解析状态</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="docTableBody">
+              <tr><td colspan="10" class="empty-tip">请选择左侧目录或搜索</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="docPagination"></div>
+      </div>
+
+      <!-- Tab: Upload -->
+      <div class="tab-content" id="tab-upload">
+        <h4 style="margin-bottom:8px;">上传单个文献</h4>
+        <div class="form-group">
+          <label>所属目录:</label>
+          <select id="uploadFolderId" style="flex:1;"></select>
+        </div>
+        <div class="form-group">
+          <label>文献文件:</label>
+          <input type="file" id="uploadFile" style="flex:1;">
+        </div>
+        <div class="form-group">
+          <label>标题:</label>
+          <input type="text" id="uploadTitle" placeholder="留空则使用文件名">
+        </div>
+        <div class="form-group">
+          <label>作者:</label>
+          <input type="text" id="uploadAuthors" placeholder="多个作者用逗号分隔">
+        </div>
+        <div class="form-group">
+          <label>关键词:</label>
+          <input type="text" id="uploadKeywords" placeholder="多个关键词用逗号分隔">
+        </div>
+        <div class="form-group">
+          <label>摘要:</label>
+          <textarea id="uploadAbstract" placeholder="文献摘要"></textarea>
+        </div>
+        <div class="form-group">
+          <label>发表日期:</label>
+          <input type="date" id="uploadPublishDate">
+        </div>
+        <div class="form-group">
+          <label>来源期刊:</label>
+          <input type="text" id="uploadSourceJournal" placeholder="来源期刊名称">
+        </div>
+        <div class="form-group">
+          <label>DOI:</label>
+          <input type="text" id="uploadDoi" placeholder="DOI号">
+        </div>
+        <div class="form-group">
+          <label>RAG来源:</label>
+          <select id="uploadRagSource">
+            <option value="0">否</option>
+            <option value="1">是</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="uploadDocument()">上传文献</button>
+        <div id="uploadResult"></div>
+      </div>
+
+      <!-- Tab: Batch Upload -->
+      <div class="tab-content" id="tab-batch-upload">
+        <h4 style="margin-bottom:8px;">批量上传文献（Excel + 文件）</h4>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+          Excel格式：第1列=文件名, 第2列=标题, 第3列=作者, 第4列=关键词, 第5列=摘要, 第6列=发表时间, 第7列=来源期刊, 第8列=RAG来源(0=仅全文检索, 1=全文检索+分块向量化)。第1行为标题行。
+        </p>
+        <div class="form-group">
+          <label>所属目录:</label>
+          <select id="batchUploadFolderId" style="flex:1;"></select>
+        </div>
+        <div class="form-group">
+          <label>Excel文件:</label>
+          <input type="file" id="batchExcelFile" accept=".xlsx,.xls" style="flex:1;">
+          <button class="btn" style="padding:4px 10px;font-size:12px;white-space:nowrap;" onclick="downloadSampleExcel()">下载示例Excel</button>
+        </div>
+        <div class="form-group">
+          <label>文献文件:</label>
+          <input type="file" id="batchFiles" multiple style="flex:1;">
+        </div>
+        <button class="btn btn-primary" onclick="batchUpload()">批量上传</button>
+        <div id="batchUploadResult"></div>
+      </div>
+
+      <!-- Tab: Search -->
+      <div class="tab-content" id="tab-search">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="searchKeyword" placeholder="输入搜索关键词..." style="padding:6px 12px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:300px;">
+          <select id="searchSortField" style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;">
+            <option value="createTime">按上传时间</option>
+            <option value="downloadCount">按下载次数</option>
+          </select>
+          <select id="searchSortOrder" style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;">
+            <option value="desc">降序</option>
+            <option value="asc">升序</option>
+          </select>
+          <button class="btn btn-primary" onclick="searchDocuments()">搜索</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>文件名</th><th>标题</th><th>作者</th><th>来源期刊</th><th>上传时间</th><th>下载次数</th><th>操作</th></tr>
+            </thead>
+            <tbody id="searchTableBody">
+              <tr><td colspan="8" class="empty-tip">输入关键词搜索</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="searchPagination"></div>
+      </div>
+
+      <!-- Tab: Recycle Bin -->
+      <div class="tab-content" id="tab-recycle">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary btn-sm" onclick="loadRecycleBin()">刷新回收站</button>
+          <button class="btn btn-success btn-sm" onclick="batchRecoverDocs()" id="batchRecoverBtn" disabled>批量恢复</button>
+          <button class="btn btn-danger btn-sm" onclick="batchPermanentDeleteDocs()" id="batchPermanentDeleteBtn" disabled>批量彻底删除</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAllRecycle" onchange="toggleSelectAllRecycle()"></th>
+                <th>ID</th><th>文件名</th><th>标题</th><th>作者</th><th>所属目录</th><th>删除时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="recycleTableBody">
+              <tr><td colspan="8" class="empty-tip">回收站为空</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="recyclePagination"></div>
+      </div>
+
+      <!-- Tab: Guide -->
+      <!-- Tab: RAG Chat -->
+      <div class="tab-content" id="tab-rag-chat" style="display:flex;flex-direction:row;height:100%;gap:0;">
+        <!-- 左侧：会话列表 -->
+        <div style="width:240px;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;">
+          <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;gap:4px;">
+            <button class="btn btn-primary btn-sm" onclick="createChatSession()" style="flex:1;">新建会话</button>
+          </div>
+          <div style="padding:6px 8px;border-bottom:1px solid var(--border);display:flex;gap:4px;">
+            <input type="text" id="sessionSearchInput" placeholder="搜索会话..." style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;" onkeydown="if(event.key==='Enter')searchChatSessions()">
+            <button class="btn btn-sm" onclick="searchChatSessions()" style="padding:4px 8px;font-size:11px;">搜</button>
+          </div>
+          <div id="sessionList" style="flex:1;overflow-y:auto;padding:4px;">
+            <div style="color:var(--text-secondary);text-align:center;padding:20px;font-size:12px;">点击"新建会话"开始</div>
+          </div>
+        </div>
+        <!-- 右侧：聊天区域 -->
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+          <div id="chatHeader" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span id="chatSessionTitle" style="font-weight:600;font-size:14px;">未选择会话</span>
+            <span style="flex:1;"></span>
+            <button class="btn btn-sm" onclick="exportChatSession('json')" style="font-size:11px;">导出JSON</button>
+            <button class="btn btn-sm" onclick="exportChatSession('markdown')" style="font-size:11px;">导出MD</button>
+          </div>
+          <div id="chatMessages" style="flex:1;overflow-y:auto;padding:12px;background:#fafafa;min-height:300px;">
+            <div style="color:var(--text-secondary);text-align:center;padding:40px;">请创建或选择会话开始对话</div>
+          </div>
+          <div style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--border);flex-shrink:0;">
+            <input type="text" id="chatInput" placeholder="输入消息..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:4px;font-size:13px;" onkeydown="if(event.key==='Enter')sendChatMessage()">
+            <button class="btn btn-primary" onclick="sendChatMessage()">发送</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: ES Debug -->
+      <div class="tab-content" id="tab-es-debug" style="overflow-y:auto;">
+        <h4 style="margin-bottom:8px;">ES解析结果验证</h4>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+          查看文献在ES中的全文索引(resource_text)和分块向量索引(doc_chunks)内容，验证解析流程是否正确。
+        </p>
+        <div class="form-group">
+          <label>文献ID:</label>
+          <input type="number" id="esDebugDocId" placeholder="输入文献ID" style="width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;">
+          <button class="btn btn-primary btn-sm" onclick="loadEsText()">查看全文索引</button>
+          <button class="btn btn-primary btn-sm" onclick="loadEsChunks()">查看分块向量</button>
+        </div>
+        <div id="esDebugResult" style="margin-top:12px;"></div>
+
+        <h4 style="margin:16px 0 8px;">向量检索测试</h4>
+        <div class="form-group">
+          <label>查询:</label>
+          <input type="text" id="vectorSearchQuery" placeholder="输入自然语言查询..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:4px;">
+          <button class="btn btn-primary btn-sm" onclick="testVectorSearch()">向量检索</button>
+        </div>
+        <div id="vectorSearchResult" style="margin-top:12px;"></div>
+      </div>
+
+      <!-- Tab: Internal Doc -->
+      <div class="tab-content" id="tab-internal-doc" style="overflow-y:auto;">
+        <h4 style="margin-bottom:8px;">内部文档管理</h4>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+          内部文档默认 ragSource=1，自动进行全文索引+分块向量化。支持在线编写(md/txt)和文件上传(txt/md/docx)。
+        </p>
+
+        <!-- 操作区 -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="showOnlineDocEditor()">在线编写</button>
+          <button class="btn btn-primary btn-sm" onclick="document.getElementById('docFileInput').click()">上传文件</button>
+          <input type="file" id="docFileInput" accept=".txt,.md,.docx" style="display:none;" onchange="uploadInternalDoc(this)">
+          <button class="btn btn-sm" onclick="loadInternalDocs()">刷新列表</button>
+        </div>
+
+        <!-- 全文检索 -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+          <input type="text" id="docSearchKeyword" placeholder="全文检索关键词..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;" onkeydown="if(event.key==='Enter')searchInternalDocs()">
+          <button class="btn btn-primary btn-sm" onclick="searchInternalDocs()">搜索</button>
+          <button class="btn btn-sm" onclick="loadInternalDocs()">返回列表</button>
+        </div>
+
+        <!-- 搜索结果 -->
+        <div id="docSearchResults" style="display:none;margin-bottom:12px;">
+          <h5 style="margin:0 0 8px;">全文检索结果</h5>
+          <div id="docSearchHits"></div>
+        </div>
+
+        <!-- 在线编辑器 -->
+        <div id="onlineDocEditor" style="display:none;margin-bottom:12px;border:1px solid var(--border);border-radius:6px;padding:12px;background:#fafafa;">
+          <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+            <input type="text" id="onlineDocTitle" placeholder="文档标题" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;">
+            <select id="onlineDocType" style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;">
+              <option value="md">Markdown</option>
+              <option value="txt">纯文本</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="createOnlineDoc()">保存</button>
+            <button class="btn btn-sm" onclick="document.getElementById('onlineDocEditor').style.display='none'">取消</button>
+          </div>
+          <textarea id="onlineDocContent" rows="12" placeholder="在此输入内容..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:Consolas,monospace;resize:vertical;"></textarea>
+        </div>
+
+        <!-- 文档列表 -->
+        <table id="internalDocTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f5f5f5;"><th style="padding:8px;text-align:left;">ID</th><th style="padding:8px;text-align:left;">标题</th><th style="padding:8px;">类型</th><th style="padding:8px;">解析状态</th><th style="padding:8px;">创建时间</th><th style="padding:8px;">操作</th></tr>
+          </thead>
+          <tbody id="internalDocBody"></tbody>
+        </table>
+      </div>
+
+      <div class="tab-content" id="tab-guide" style="overflow-y:auto;">
+        <div class="guide-section">
+          <h3>文献管理模块 - 测试指南</h3>
+
+          <h4>一、前置条件</h4>
+          <ul>
+            <li>确保后端服务已启动（默认 <code>http://localhost:8080</code>）</li>
+            <li>确保已执行SQL迁移脚本 <code>migration_document_management.sql</code>（为literature表增加folder_id和file_name字段）</li>
+            <li>确保MySQL、MinIO、Redis服务正常运行</li>
+          </ul>
+
+          <h4>二、测试流程</h4>
+          <ol>
+            <li><strong>登录</strong>：选择用户角色登录（admin拥有全部权限）</li>
+            <li><strong>加载目录树</strong>：登录后点击左侧"刷新"按钮加载目录树</li>
+            <li><strong>创建目录</strong>：在目录树中创建测试目录（仅admin）</li>
+            <li><strong>上传文献</strong>：切换到"上传文献"标签，选择目录并上传文件</li>
+            <li><strong>查看文献列表</strong>：点击左侧目录树节点，查看该目录下的文献</li>
+            <li><strong>文献搜索</strong>：在"文献搜索"标签中输入关键词搜索</li>
+            <li><strong>下载文献</strong>：点击文献行的"下载"按钮</li>
+            <li><strong>移动文献</strong>：点击"移动"按钮，选择目标目录</li>
+            <li><strong>删除文献</strong>：点击"删除"按钮，文献进入回收站</li>
+            <li><strong>回收站操作</strong>：在"回收站"标签中恢复或彻底删除文献</li>
+          </ol>
+
+          <h4>三、权限测试矩阵</h4>
+          <table>
+            <tr><th>功能</th><th>ADMIN</th><th>TEACHER</th><th>STUDENT</th><th>GUEST</th></tr>
+            <tr><td>上传文献</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+            <tr><td>批量上传</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>删除文献</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>批量删除</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>移动文献</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>批量移动</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>下载文献</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+            <tr><td>批量下载ZIP</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+            <tr><td>查询目录文献</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+            <tr><td>文献详情</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+            <tr><td>文献搜索</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+            <tr><td>回收站</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>恢复文献</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>彻底删除</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+            <tr><td>RAG对话</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+          </table>
+
+          <h4>四、批量上传Excel模板</h4>
+          <p>Excel第一行为标题行，格式如下：</p>
+          <table>
+            <tr><th>文件名</th><th>标题</th><th>作者</th><th>关键词</th><th>摘要</th><th>发表时间</th><th>来源期刊</th><th>RAG来源</th></tr>
+            <tr><td>paper1.pdf</td><td>深度学习研究</td><td>张三,李四</td><td>深度学习,AI</td><td>本文研究...</td><td>2024-01-15</td><td>计算机学报</td><td>0</td></tr>
+            <tr><td>paper2.pdf</td><td>自然语言处理</td><td>王五</td><td>NLP,LLM</td><td>本文提出...</td><td>2024-03-20</td><td>软件学报</td><td>1</td></tr>
+          </table>
+          <p style="font-size:12px;color:var(--text-secondary);">RAG来源: 0=仅全文检索, 1=全文检索+分块向量化</p>
+
+          <h4>五、API接口列表</h4>
+          <table>
+            <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+            <tr><td>POST</td><td><code>/api/document/upload</code></td><td>上传文献</td></tr>
+            <tr><td>POST</td><td><code>/api/document/batch-upload</code></td><td>批量上传</td></tr>
+            <tr><td>DELETE</td><td><code>/api/document/{id}</code></td><td>删除文献</td></tr>
+            <tr><td>DELETE</td><td><code>/api/document/batch-delete</code></td><td>批量删除</td></tr>
+            <tr><td>PUT</td><td><code>/api/document/move</code></td><td>移动文献</td></tr>
+            <tr><td>PUT</td><td><code>/api/document/batch-move</code></td><td>批量移动</td></tr>
+            <tr><td>GET</td><td><code>/api/document/{id}/download</code></td><td>下载文献</td></tr>
+            <tr><td>POST</td><td><code>/api/document/batch-download</code></td><td>批量下载ZIP</td></tr>
+            <tr><td>GET</td><td><code>/api/document/folder</code></td><td>查询目录下文献</td></tr>
+            <tr><td>GET</td><td><code>/api/document/{id}/detail</code></td><td>文献详情</td></tr>
+            <tr><td>GET</td><td><code>/api/document/search</code></td><td>文献搜索</td></tr>
+            <tr><td>GET</td><td><code>/api/document/recycle-bin</code></td><td>回收站列表</td></tr>
+            <tr><td>PUT</td><td><code>/api/document/{id}/recover</code></td><td>恢复文献</td></tr>
+            <tr><td>PUT</td><td><code>/api/document/batch-recover</code></td><td>批量恢复</td></tr>
+            <tr><td>DELETE</td><td><code>/api/document/{id}/permanent</code></td><td>彻底删除</td></tr>
+            <tr><td>GET</td><td><code>/api/document/{id}/es-text</code></td><td>查看ES全文索引(ADMIN)</td></tr>
+            <tr><td>GET</td><td><code>/api/document/{id}/es-chunks</code></td><td>查看ES分块向量(ADMIN)</td></tr>
+          </table>
+
+          <h4 style="margin-top:12px;">RAG对话接口</h4>
+          <table>
+            <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+            <tr><td>POST</td><td><code>/api/session</code></td><td>创建会话</td></tr>
+            <tr><td>GET</td><td><code>/api/session/list</code></td><td>会话列表</td></tr>
+            <tr><td>GET</td><td><code>/api/session/search?keyword=</code></td><td>搜索会话</td></tr>
+            <tr><td>GET</td><td><code>/api/session/{id}/messages</code></td><td>历史消息</td></tr>
+            <tr><td>GET</td><td><code>/api/session/{id}/export?format=</code></td><td>导出会话(json/markdown)</td></tr>
+            <tr><td>POST</td><td><code>/api/chat/stream</code></td><td>流式对话(SSE)</td></tr>
+            <tr><td>POST</td><td><code>/api/chat/regenerate</code></td><td>重新生成(SSE)</td></tr>
+            <tr><td>GET</td><td><code>/api/search/chunks?docType=&docId=</code></td><td>查询分块</td></tr>
+            <tr><td>GET</td><td><code>/api/search/vector-search?query=&topK=</code></td><td>向量检索</td></tr>
+          </table>
+
+          <h4 style="margin-top:12px;">内部文档接口</h4>
+          <table>
+            <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+            <tr><td>POST</td><td><code>/api/doc</code></td><td>上传文件创建文档(form-data)</td></tr>
+            <tr><td>POST</td><td><code>/api/doc/online</code></td><td>在线创建文档(JSON)</td></tr>
+            <tr><td>GET</td><td><code>/api/doc/page</code></td><td>文档分页列表</td></tr>
+            <tr><td>GET</td><td><code>/api/doc/{id}</code></td><td>文档详情(含预览URL)</td></tr>
+            <tr><td>PUT</td><td><code>/api/doc/{id}</code></td><td>更新文档</td></tr>
+            <tr><td>DELETE</td><td><code>/api/doc/{id}</code></td><td>删除文档</td></tr>
+          </table>
+
+          <h4>六、注意事项</h4>
+          <ul>
+            <li>文献必须归属于某个目录，上传时必须指定folderId</li>
+            <li>删除文献为逻辑删除，进入回收站后可恢复</li>
+            <li>彻底删除会物理删除数据库记录和MinIO文件，不可恢复</li>
+            <li>批量下载ZIP采用流式传输，不生成服务器临时文件</li>
+            <li>下载次数在单文件下载和批量下载时均会+1</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Move Modal -->
+<div class="modal-overlay" id="moveModal">
+  <div class="modal">
+    <h3>移动文献到目标目录</h3>
+    <div class="form-group">
+      <label>目标目录:</label>
+      <select id="moveTargetFolder" style="flex:1;"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMoveModal()">取消</button>
+      <button class="btn btn-primary" onclick="confirmMove()">确认移动</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal" style="width:600px;">
+    <h3>文献详情</h3>
+    <div id="detailContent"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeDetailModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+// ==================== Global State ====================
+let token = '';
+let currentUser = null;
+let currentFolderId = null;
+let folderTreeData = [];
+let docPage = 1;
+let docTotal = 0;
+let searchPage = 1;
+let searchTotal = 0;
+let recyclePage = 1;
+let recycleTotal = 0;
+let selectedDocIds = new Set();
+let selectedRecycleIds = new Set();
+let moveDocIds = [];
+
+function getServerUrl() { return document.getElementById('serverUrl').value.replace(/\/$/, ''); }
+function getHeaders() { return token ? { 'Authorization': token } : {}; }
+
+// ==================== API Helper ====================
+async function api(method, path, body, isFormData = false) {
+  const opts = { method, headers: getHeaders() };
+  if (body !== undefined && body !== null) {
+    if (isFormData) {
+      opts.body = body;
+    } else {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+  }
+  const res = await fetch(getServerUrl() + path, opts);
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { return text; }
+}
+
+// ==================== Login/Logout ====================
+async function login() {
+  const username = document.getElementById('loginUser').value;
+  const password = document.getElementById('loginPass').value;
+  const res = await api('POST', '/api/user/login', { username, password });
+  if (res.code === 200) {
+    token = res.data.token;
+    currentUser = res.data.user;
+    document.getElementById('loginStatus').className = 'status-tag status-online';
+    document.getElementById('loginStatus').textContent = '已登录';
+    document.getElementById('roleInfo').textContent = `${currentUser.username} (${(currentUser.roles || []).join(',')})`;
+    loadFolderTree();
+  } else {
+    alert('登录失败: ' + (res.message || '未知错误'));
+  }
+}
+
+function logout() {
+  token = '';
+  currentUser = null;
+  document.getElementById('loginStatus').className = 'status-tag status-offline';
+  document.getElementById('loginStatus').textContent = '未登录';
+  document.getElementById('roleInfo').textContent = '';
+  document.getElementById('folderTree').innerHTML = '<div class="empty-tip">请先登录后加载目录树</div>';
+}
+
+// ==================== Folder Tree ====================
+async function loadFolderTree() {
+  if (!token) { alert('请先登录'); return; }
+  const res = await api('GET', '/api/rag/folder/tree');
+  if (res.code === 200) {
+    folderTreeData = res.data;
+    renderFolderTree(res.data);
+    updateFolderSelects();
+  } else {
+    document.getElementById('folderTree').innerHTML = '<div class="empty-tip">加载失败: ' + res.message + '</div>';
+  }
+}
+
+function renderFolderTree(nodes, container, level = 0) {
+  if (!container) container = document.getElementById('folderTree');
+  container.innerHTML = '';
+  nodes.forEach(node => {
+    const hasChildren = node.children && node.children.length > 0;
+    const hasDocs = node.documents && node.documents.length > 0;
+    const nodeDiv = document.createElement('div');
+
+    const nodeEl = document.createElement('div');
+    nodeEl.className = 'tree-node';
+    nodeEl.dataset.id = node.id;
+    const docCount = hasDocs ? ` (${node.documents.length})` : '';
+    nodeEl.innerHTML = `
+      <span class="arrow ${(hasChildren || hasDocs) ? 'expanded' : ''}" style="visibility:${(hasChildren || hasDocs) ? 'visible' : 'hidden'}">▶</span>
+      <span>📁 ${node.folderName}${docCount}</span>
+    `;
+    nodeEl.onclick = (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.tree-node.active').forEach(n => n.classList.remove('active'));
+      nodeEl.classList.add('active');
+      currentFolderId = node.id;
+      document.getElementById('currentFolderName').textContent = node.folderName;
+      docPage = 1;
+      loadDocuments();
+    };
+
+    // 顶层目录也作为拖拽放置目标
+    nodeEl.ondragover = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      nodeEl.style.background = 'var(--primary-light)';
+    };
+    nodeEl.ondragleave = (e) => {
+      nodeEl.style.background = '';
+    };
+    nodeEl.ondrop = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      nodeEl.style.background = '';
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        if (data.type === 'doc' && data.folderId !== node.id) {
+          if (confirm(`确定将文献(ID:${data.id})移动到目录"${node.folderName}"吗？`)) {
+            const res = await api('PUT', '/api/document/move', { documentId: data.id, targetFolderId: node.id });
+            if (res.code === 200) {
+              loadDocuments();
+              loadFolderTree();
+            } else {
+              alert('移动失败: ' + res.message);
+            }
+          }
+        }
+      } catch (err) {}
+    };
+
+    const arrow = nodeEl.querySelector('.arrow');
+    if (hasChildren || hasDocs) {
+      arrow.onclick = (e) => {
+        e.stopPropagation();
+        arrow.classList.toggle('expanded');
+        const childrenDiv = nodeDiv.querySelector('.tree-children');
+        if (childrenDiv) childrenDiv.classList.toggle('hidden');
+      };
+    }
+
+    nodeDiv.appendChild(nodeEl);
+
+    if (hasChildren || hasDocs) {
+      const childrenDiv = document.createElement('div');
+      childrenDiv.className = 'tree-children';
+      // 先渲染子目录
+      if (hasChildren) {
+        renderFolderTreeChildren(node.children, childrenDiv);
+      }
+      // 再渲染文献文件
+      if (hasDocs) {
+        renderFolderDocuments(node.documents, childrenDiv);
+      }
+      nodeDiv.appendChild(childrenDiv);
+    }
+
+    container.appendChild(nodeDiv);
+  });
+}
+
+function renderFolderTreeChildren(nodes, container) {
+  nodes.forEach(node => {
+    const hasChildren = node.children && node.children.length > 0;
+    const hasDocs = node.documents && node.documents.length > 0;
+    const nodeDiv = document.createElement('div');
+
+    const nodeEl = document.createElement('div');
+    nodeEl.className = 'tree-node';
+    nodeEl.dataset.id = node.id;
+    const docCount = hasDocs ? ` (${node.documents.length})` : '';
+    nodeEl.innerHTML = `
+      <span class="arrow ${(hasChildren || hasDocs) ? 'expanded' : ''}" style="visibility:${(hasChildren || hasDocs) ? 'visible' : 'hidden'}">▶</span>
+      <span>📁 ${node.folderName}${docCount}</span>
+    `;
+    nodeEl.onclick = (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.tree-node.active').forEach(n => n.classList.remove('active'));
+      nodeEl.classList.add('active');
+      currentFolderId = node.id;
+      document.getElementById('currentFolderName').textContent = node.folderName;
+      docPage = 1;
+      loadDocuments();
+    };
+
+    // 目录节点作为拖拽放置目标
+    nodeEl.ondragover = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      nodeEl.style.background = 'var(--primary-light)';
+    };
+    nodeEl.ondragleave = (e) => {
+      nodeEl.style.background = '';
+    };
+    nodeEl.ondrop = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      nodeEl.style.background = '';
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        if (data.type === 'doc' && data.folderId !== node.id) {
+          if (confirm(`确定将文献(ID:${data.id})移动到目录"${node.folderName}"吗？`)) {
+            const res = await api('PUT', '/api/document/move', { documentId: data.id, targetFolderId: node.id });
+            if (res.code === 200) {
+              loadDocuments();
+              loadFolderTree();
+            } else {
+              alert('移动失败: ' + res.message);
+            }
+          }
+        }
+      } catch (err) {
+        // 忽略非拖拽数据
+      }
+    };
+
+    const arrow = nodeEl.querySelector('.arrow');
+    if (hasChildren || hasDocs) {
+      arrow.onclick = (e) => {
+        e.stopPropagation();
+        arrow.classList.toggle('expanded');
+        const childrenDiv = nodeDiv.querySelector('.tree-children');
+        if (childrenDiv) childrenDiv.classList.toggle('hidden');
+      };
+    }
+
+    nodeDiv.appendChild(nodeEl);
+
+    if (hasChildren || hasDocs) {
+      const childrenDiv = document.createElement('div');
+      childrenDiv.className = 'tree-children';
+      if (hasChildren) {
+        renderFolderTreeChildren(node.children, childrenDiv);
+      }
+      if (hasDocs) {
+        renderFolderDocuments(node.documents, childrenDiv);
+      }
+      nodeDiv.appendChild(childrenDiv);
+    }
+
+    container.appendChild(nodeDiv);
+  });
+}
+
+/**
+ * 在目录树下渲染文献文件节点
+ */
+function renderFolderDocuments(documents, container) {
+  documents.forEach(doc => {
+    const docEl = document.createElement('div');
+    docEl.className = 'tree-node tree-doc-node';
+    docEl.style.color = '#606266';
+    docEl.dataset.id = doc.id;
+    docEl.dataset.folderId = doc.folderId;
+    docEl.draggable = true;
+    const icon = getFileIcon(doc.fileType);
+    const statusTag = formatParseStatusSmall(doc.parseStatus);
+    docEl.innerHTML = `
+      <span class="arrow" style="visibility:hidden;">▶</span>
+      <span>${icon} ${doc.fileName || doc.title || '未知'} ${statusTag}</span>
+    `;
+    // 拖拽开始
+    docEl.ondragstart = (e) => {
+      e.stopPropagation();
+      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'doc', id: doc.id, folderId: doc.folderId }));
+      e.dataTransfer.effectAllowed = 'move';
+      docEl.style.opacity = '0.5';
+    };
+    docEl.ondragend = (e) => {
+      docEl.style.opacity = '1';
+    };
+    docEl.onclick = (e) => {
+      e.stopPropagation();
+      // 找到父目录节点，加载该目录的文献列表到右侧
+      const parentFolderEl = docEl.closest('.tree-children')?.previousElementSibling;
+      if (parentFolderEl && parentFolderEl.dataset.id) {
+        document.querySelectorAll('.tree-node.active').forEach(n => n.classList.remove('active'));
+        parentFolderEl.classList.add('active');
+        currentFolderId = parentFolderEl.dataset.id;
+        const folderName = parentFolderEl.querySelector('span:last-child')?.textContent?.replace(/\s*\(.*\)/, '').replace('📁 ', '') || '';
+        document.getElementById('currentFolderName').textContent = folderName;
+        docPage = 1;
+        loadDocuments();
+      }
+    };
+    container.appendChild(docEl);
+  });
+}
+
+function getFileIcon(fileType) {
+  if (!fileType) return '📄';
+  const t = fileType.toLowerCase();
+  if (t === 'pdf') return '📕';
+  if (t === 'docx' || t === 'doc') return '📘';
+  if (t === 'xlsx' || t === 'xls') return '📊';
+  if (t === 'pptx' || t === 'ppt') return '📙';
+  if (t === 'txt') return '📝';
+  if (t === 'md') return '📋';
+  return '📄';
+}
+
+function formatParseStatusSmall(status) {
+  if (!status || status === 'NONE') return '';
+  if (status === 'PENDING') return '<span style="font-size:10px;color:#e6a23c;">⏳</span>';
+  if (status === 'SUCCESS') return '<span style="font-size:10px;color:#67c23a;">✓</span>';
+  if (status === 'FAILED') return '<span style="font-size:10px;color:#f56c6c;">✗</span>';
+  return '';
+}
+
+function updateFolderSelects() {
+  const selects = ['uploadFolderId', 'batchUploadFolderId', 'moveTargetFolder'];
+  const options = [];
+  function flatten(nodes, prefix = '') {
+    nodes.forEach(n => {
+      options.push({ id: n.id, name: prefix + n.folderName });
+      if (n.children) flatten(n.children, prefix + n.folderName + ' / ');
+    });
+  }
+  flatten(folderTreeData);
+  selects.forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- 请选择目录 --</option>';
+    options.forEach(opt => {
+      sel.innerHTML += `<option value="${opt.id}">${opt.name}</option>`;
+    });
+  });
+}
+
+// ==================== Tab Switch ====================
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab-item[data-tab="${tabId}"]`).classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+  // 切换到RAG对话Tab时自动加载会话列表
+  if (tabId === 'rag-chat') {
+    loadChatSessionList();
+  }
+}
+
+// ==================== Documents List ====================
+async function loadDocuments() {
+  if (!currentFolderId) { alert('请先在左侧目录树选择一个目录'); return; }
+  const keyword = document.getElementById('docKeyword').value;
+  let url = `/api/document/folder?folderId=${currentFolderId}&page=${docPage}&size=10`;
+  if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+
+  const res = await api('GET', url);
+  if (res.code === 200) {
+    docTotal = res.data.total;
+    renderDocTable(res.data.records);
+    renderDocPagination();
+  } else {
+    document.getElementById('docTableBody').innerHTML = `<tr><td colspan="9" class="empty-tip">查询失败: ${res.message}</td></tr>`;
+  }
+}
+
+function renderDocTable(records) {
+  const tbody = document.getElementById('docTableBody');
+  selectedDocIds.clear();
+  document.getElementById('selectAllDocs').checked = false;
+  updateBatchButtons();
+
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-tip">暂无文献</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = records.map(doc => `
+    <tr>
+      <td><input type="checkbox" data-id="${doc.id}" onchange="toggleDocSelect('${doc.id}')"></td>
+      <td>${doc.id}</td>
+      <td title="${doc.fileName || ''}">${(doc.fileName || '').substring(0, 20)}</td>
+      <td title="${doc.title || ''}">${(doc.title || '').substring(0, 20)}</td>
+      <td>${(doc.authors || '').substring(0, 15)}</td>
+      <td>${(doc.sourceJournal || '').substring(0, 15)}</td>
+      <td>${formatDate(doc.createTime)}</td>
+      <td>${doc.downloadCount || 0}</td>
+      <td>${formatParseStatus(doc.parseStatus)}</td>
+      <td class="actions">
+        <button class="btn btn-primary btn-sm" onclick="viewDetail('${doc.id}')">详情</button>
+        <button class="btn btn-success btn-sm" onclick="downloadDoc('${doc.id}')">下载</button>
+        <button class="btn btn-warning btn-sm" onclick="moveDoc('${doc.id}')">移动</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteDoc('${doc.id}')">删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderDocPagination() {
+  const totalPages = Math.ceil(docTotal / 10) || 1;
+  const div = document.getElementById('docPagination');
+  div.innerHTML = `
+    <span>共 ${docTotal} 条</span>
+    <div class="page-btns">
+      <button onclick="docPage=1;loadDocuments()" ${docPage<=1?'disabled':''}>首页</button>
+      <button onclick="docPage--;loadDocuments()" ${docPage<=1?'disabled':''}>上一页</button>
+      <span style="padding:0 8px;">${docPage} / ${totalPages}</span>
+      <button onclick="docPage++;loadDocuments()" ${docPage>=totalPages?'disabled':''}>下一页</button>
+    </div>
+  `;
+}
+
+function toggleDocSelect(id) {
+  if (selectedDocIds.has(id)) selectedDocIds.delete(id); else selectedDocIds.add(id);
+  updateBatchButtons();
+}
+
+function toggleSelectAll() {
+  const checked = document.getElementById('selectAllDocs').checked;
+  document.querySelectorAll('#docTableBody input[type=checkbox]').forEach(cb => {
+    cb.checked = checked;
+    const id = cb.dataset.id; // 保持字符串，避免Long精度丢失
+    if (checked) selectedDocIds.add(id); else selectedDocIds.delete(id);
+  });
+  updateBatchButtons();
+}
+
+function updateBatchButtons() {
+  const hasSelection = selectedDocIds.size > 0;
+  document.getElementById('batchDeleteBtn').disabled = !hasSelection;
+  document.getElementById('batchMoveBtn').disabled = !hasSelection;
+  document.getElementById('batchDownloadBtn').disabled = !hasSelection;
+}
+
+// ==================== Upload ====================
+async function uploadDocument() {
+  const folderId = document.getElementById('uploadFolderId').value;
+  if (!folderId) { alert('请选择所属目录'); return; }
+  const fileInput = document.getElementById('uploadFile');
+  if (!fileInput.files[0]) { alert('请选择文件'); return; }
+
+  const formData = new FormData();
+  formData.append('folderId', folderId);
+  formData.append('file', fileInput.files[0]);
+
+  const fields = {
+    title: 'uploadTitle', authors: 'uploadAuthors', keywords: 'uploadKeywords',
+    abstractText: 'uploadAbstract', publishDate: 'uploadPublishDate',
+    sourceJournal: 'uploadSourceJournal', doi: 'uploadDoi', ragSource: 'uploadRagSource'
+  };
+  for (const [key, elId] of Object.entries(fields)) {
+    const val = document.getElementById(elId).value;
+    if (val) formData.append(key, val);
+  }
+
+  const resDiv = document.getElementById('uploadResult');
+  resDiv.innerHTML = '<div class="result-box">上传中...</div>';
+  try {
+    const res = await fetch(getServerUrl() + '/api/document/upload', {
+      method: 'POST', headers: getHeaders(), body: formData
+    });
+    const data = await res.json();
+    if (data.code === 200) {
+      const docId = data.data.id;
+      const ragSource = data.data.ragSource;
+      resDiv.innerHTML = `<div class="result-box success">上传成功! ID: ${docId}\n${JSON.stringify(data.data, null, 2)}</div>`;
+      // 所有文献都需要解析（ragSource=0/1 都会解析全文存入ES），启动轮询
+      pollParseStatus(docId, resDiv);
+      // 刷新文献列表和目录树
+      if (currentFolderId) loadDocuments();
+      loadFolderTree();
+    } else {
+      resDiv.innerHTML = `<div class="result-box error">上传失败: ${data.message}</div>`;
+    }
+  } catch (e) {
+    resDiv.innerHTML = `<div class="result-box error">请求异常: ${e.message}</div>`;
+  }
+}
+
+/**
+ * 轮询文献解析状态
+ * 每3秒查询一次，直到状态变为SUCCESS或FAILED，最多轮询60次（3分钟）
+ */
+function pollParseStatus(docId, resDiv) {
+  let count = 0;
+  const maxPolls = 60;
+  const interval = 3000; // 3秒
+
+  resDiv.innerHTML += '\n<div id="parseStatus_' + docId + '" style="margin-top:8px;color:#e6a23c;">解析中...</div>';
+
+  const timer = setInterval(async () => {
+    count++;
+    try {
+      const res = await api('GET', `/api/document/${docId}/parse-status`);
+      const statusEl = document.getElementById('parseStatus_' + docId);
+      if (res.code === 200) {
+        const status = res.data;
+        if (status === 'SUCCESS') {
+          clearInterval(timer);
+          if (statusEl) statusEl.innerHTML = '<span style="color:#67c23a;">解析完成!</span>';
+          if (currentFolderId) loadDocuments();
+        } else if (status === 'FAILED') {
+          clearInterval(timer);
+          if (statusEl) statusEl.innerHTML = '<span style="color:#f56c6c;">解析失败</span>';
+        } else if (status === 'PENDING') {
+          if (statusEl) statusEl.innerHTML = '<span style="color:#e6a23c;">解析中... (' + count + '/' + maxPolls + ')</span>';
+        } else {
+          // NONE - 无需解析
+          clearInterval(timer);
+          if (statusEl) statusEl.innerHTML = '<span style="color:#909399;">无需解析</span>';
+        }
+      }
+    } catch (e) {
+      // 轮询异常不中断，继续尝试
+    }
+    if (count >= maxPolls) {
+      clearInterval(timer);
+      const statusEl = document.getElementById('parseStatus_' + docId);
+      if (statusEl) statusEl.innerHTML = '<span style="color:#909399;">轮询超时，请手动刷新查看</span>';
+    }
+  }, interval);
+}
+
+// ==================== 下载示例Excel ====================
+function downloadSampleExcel() {
+  const headers = ['文件名', '标题', '作者', '关键词', '摘要', '发表时间', '来源期刊', 'RAG来源'];
+  const sampleRows = [
+    ['example.pdf', '基于深度学习的文献分类研究', '张三;李四', '深度学习;文献分类;自然语言处理', '本文提出了一种基于深度学习的文献自动分类方法，通过BERT模型提取文本特征，结合注意力机制实现高精度分类。', '2025-03-15', '计算机科学学报', 0],
+    ['research.docx', '量子计算在密码学中的应用', '王五', '量子计算;密码学;后量子密码', '本文综述了量子计算对传统密码体系的威胁，并分析了后量子密码算法的研究进展。', '2025-06-01', '信息安全学报', 1],
+  ];
+  const wsData = [headers, ...sampleRows];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 18 }, { wch: 30 }, { wch: 15 }, { wch: 25 }, { wch: 50 }, { wch: 14 }, { wch: 16 }, { wch: 10 }
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '文献信息');
+  XLSX.writeFile(wb, '批量上传模板.xlsx');
+}
+
+// ==================== Batch Upload ====================
+async function batchUpload() {
+  const folderId = document.getElementById('batchUploadFolderId').value;
+  if (!folderId) { alert('请选择所属目录'); return; }
+  const excelInput = document.getElementById('batchExcelFile');
+  const filesInput = document.getElementById('batchFiles');
+  if (!excelInput.files[0]) { alert('请选择Excel文件'); return; }
+  if (!filesInput.files.length) { alert('请选择文献文件'); return; }
+
+  const formData = new FormData();
+  formData.append('folderId', folderId);
+  formData.append('excelFile', excelInput.files[0]);
+  for (const f of filesInput.files) {
+    formData.append('files', f);
+  }
+
+  const resDiv = document.getElementById('batchUploadResult');
+  resDiv.innerHTML = '<div class="result-box">批量上传中...</div>';
+  try {
+    const res = await fetch(getServerUrl() + '/api/document/batch-upload', {
+      method: 'POST', headers: getHeaders(), body: formData
+    });
+    const data = await res.json();
+    if (data.code === 200) {
+      resDiv.innerHTML = `<div class="result-box success">批量上传完成!\n成功: ${data.data.successCount}, 失败: ${data.data.failCount}\n${JSON.stringify(data.data.failList, null, 2)}</div>`;
+      // 批量轮询解析状态
+      if (data.data.successIds && data.data.successIds.length > 0) {
+        pollBatchParseStatus(data.data.successIds, resDiv);
+      }
+      loadFolderTree();
+      if (currentFolderId) loadDocuments();
+    } else {
+      resDiv.innerHTML = `<div class="result-box error">批量上传失败: ${data.message}</div>`;
+    }
+  } catch (e) {
+    resDiv.innerHTML = `<div class="result-box error">请求异常: ${e.message}</div>`;
+  }
+}
+
+/**
+ * 批量轮询文献解析状态
+ */
+function pollBatchParseStatus(docIds, resDiv) {
+  let count = 0;
+  const maxPolls = 60;
+  const interval = 3000;
+  const statusDivId = 'batchParseStatus';
+  resDiv.innerHTML += `\n<div id="${statusDivId}" style="margin-top:8px;color:#e6a23c;">批量解析中 (0/${docIds.length})...</div>`;
+
+  const timer = setInterval(async () => {
+    count++;
+    try {
+      const res = await api('POST', '/api/document/batch-parse-status', docIds.map(id => Number(id)));
+      if (res.code === 200) {
+        const statusMap = res.data;
+        const total = Object.keys(statusMap).length;
+        const successCount = Object.values(statusMap).filter(s => s === 'SUCCESS').length;
+        const failedCount = Object.values(statusMap).filter(s => s === 'FAILED').length;
+        const pendingCount = Object.values(statusMap).filter(s => s === 'PENDING').length;
+        const el = document.getElementById(statusDivId);
+        if (pendingCount === 0) {
+          clearInterval(timer);
+          if (el) el.innerHTML = `<span style="color:#67c23a;">批量解析完成! 成功: ${successCount}, 失败: ${failedCount}</span>`;
+          if (currentFolderId) loadDocuments();
+          loadFolderTree();
+        } else {
+          if (el) el.innerHTML = `<span style="color:#e6a23c;">解析中... 完成: ${successCount + failedCount}/${total} (${count}/${maxPolls})</span>`;
+        }
+      }
+    } catch (e) { /* 继续轮询 */ }
+    if (count >= maxPolls) {
+      clearInterval(timer);
+      const el = document.getElementById(statusDivId);
+      if (el) el.innerHTML = '<span style="color:#909399;">轮询超时，请手动刷新查看</span>';
+    }
+  }, interval);
+}
+
+// ==================== Document Actions ====================
+async function viewDetail(id) {
+  const res = await api('GET', `/api/document/${id}/detail`);
+  if (res.code === 200) {
+    const d = res.data;
+    document.getElementById('detailContent').innerHTML = `
+      <table style="width:100%;font-size:13px;">
+        <tr><td style="font-weight:600;width:100px;">ID:</td><td>${d.id}</td></tr>
+        <tr><td style="font-weight:600;">文件名:</td><td>${d.fileName || '-'}</td></tr>
+        <tr><td style="font-weight:600;">标题:</td><td>${d.title || '-'}</td></tr>
+        <tr><td style="font-weight:600;">作者:</td><td>${d.authors || '-'}</td></tr>
+        <tr><td style="font-weight:600;">关键词:</td><td>${d.keywords || '-'}</td></tr>
+        <tr><td style="font-weight:600;">摘要:</td><td>${d.abstractText || '-'}</td></tr>
+        <tr><td style="font-weight:600;">发表日期:</td><td>${d.publishDate || '-'}</td></tr>
+        <tr><td style="font-weight:600;">来源期刊:</td><td>${d.sourceJournal || '-'}</td></tr>
+        <tr><td style="font-weight:600;">DOI:</td><td>${d.doi || '-'}</td></tr>
+        <tr><td style="font-weight:600;">所属目录:</td><td>${d.folderName || '-'} (ID: ${d.folderId})</td></tr>
+        <tr><td style="font-weight:600;">文件类型:</td><td>${d.fileType || '-'}</td></tr>
+        <tr><td style="font-weight:600;">上传人:</td><td>ID: ${d.uploaderId}</td></tr>
+        <tr><td style="font-weight:600;">上传时间:</td><td>${formatDate(d.createTime)}</td></tr>
+        <tr><td style="font-weight:600;">下载次数:</td><td>${d.downloadCount || 0}</td></tr>
+        <tr><td style="font-weight:600;">浏览次数:</td><td>${d.viewCount || 0}</td></tr>
+        <tr><td style="font-weight:600;">RAG来源:</td><td>${d.ragSource === 1 ? '是' : '否'}</td></tr>
+        <tr><td style="font-weight:600;">解析状态:</td><td>${d.parseStatus || '-'}</td></tr>
+      </table>
+    `;
+    document.getElementById('detailModal').classList.add('show');
+  } else {
+    alert('获取详情失败: ' + res.message);
+  }
+}
+
+function closeDetailModal() { document.getElementById('detailModal').classList.remove('show'); }
+
+async function downloadDoc(id) {
+  const res = await api('GET', `/api/document/${id}/download`);
+  if (res.code === 200) {
+    window.open(res.data, '_blank');
+    // 下载次数已在后端+1，刷新当前列表以更新显示
+    if (currentFolderId) loadDocuments();
+  } else {
+    alert('下载失败: ' + res.message);
+  }
+}
+
+async function deleteDoc(id) {
+  if (!confirm('确定删除该文献？文献将进入回收站。')) return;
+  const res = await api('DELETE', `/api/document/${id}`);
+  if (res.code === 200) {
+    alert('删除成功');
+    loadDocuments();
+    loadFolderTree();
+  } else {
+    alert('删除失败: ' + res.message);
+  }
+}
+
+async function batchDeleteDocs() {
+  if (selectedDocIds.size === 0) { alert('请先选择文献'); return; }
+  if (!confirm(`确定删除选中的 ${selectedDocIds.size} 个文献？`)) return;
+  const res = await api('DELETE', '/api/document/batch-delete', { documentIds: [...selectedDocIds] });
+  if (res.code === 200) {
+    alert('批量删除成功');
+    loadDocuments();
+    loadFolderTree();
+  } else {
+    alert('批量删除失败: ' + res.message);
+  }
+}
+
+function moveDoc(id) {
+  moveDocIds = [id];
+  showBatchMoveModal();
+}
+
+function showBatchMoveModal() {
+  if (moveDocIds.length === 0 && selectedDocIds.size > 0) moveDocIds = [...selectedDocIds];
+  if (moveDocIds.length === 0) { alert('请先选择文献'); return; }
+  document.getElementById('moveModal').classList.add('show');
+}
+
+function closeMoveModal() { document.getElementById('moveModal').classList.remove('show'); moveDocIds = []; }
+
+async function confirmMove() {
+  const targetFolderId = document.getElementById('moveTargetFolder').value;
+  if (!targetFolderId) { alert('请选择目标目录'); return; }
+
+  if (moveDocIds.length === 1) {
+    const res = await api('PUT', '/api/document/move', { documentId: moveDocIds[0], targetFolderId: targetFolderId });
+    if (res.code === 200) { alert('移动成功'); } else { alert('移动失败: ' + res.message); return; }
+  } else {
+    const res = await api('PUT', '/api/document/batch-move', { documentIds: moveDocIds, targetFolderId: targetFolderId });
+    if (res.code === 200) { alert('批量移动成功'); } else { alert('批量移动失败: ' + res.message); return; }
+  }
+  closeMoveModal();
+  loadDocuments();
+  loadFolderTree(); // 移动后刷新目录树
+}
+
+async function batchDownloadDocs() {
+  if (selectedDocIds.size === 0) { alert('请先选择文献'); return; }
+  try {
+    const res = await fetch(getServerUrl() + '/api/document/batch-download', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentIds: [...selectedDocIds] })
+    });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'documents.zip'; a.click();
+      URL.revokeObjectURL(url);
+      // 批量下载次数已+1，刷新列表
+      if (currentFolderId) loadDocuments();
+    } else {
+      const data = await res.json();
+      alert('批量下载失败: ' + (data.message || '未知错误'));
+    }
+  } catch (e) {
+    alert('批量下载异常: ' + e.message);
+  }
+}
+
+// ==================== Search ====================
+async function searchDocuments() {
+  const keyword = document.getElementById('searchKeyword').value;
+  const sortField = document.getElementById('searchSortField').value;
+  const sortOrder = document.getElementById('searchSortOrder').value;
+  let url = `/api/document/search?page=${searchPage}&size=10&sortField=${sortField}&sortOrder=${sortOrder}`;
+  if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+
+  const res = await api('GET', url);
+  if (res.code === 200) {
+    searchTotal = res.data.total;
+    renderSearchTable(res.data.records);
+    renderSearchPagination();
+  } else {
+    document.getElementById('searchTableBody').innerHTML = `<tr><td colspan="8" class="empty-tip">搜索失败: ${res.message}</td></tr>`;
+  }
+}
+
+function renderSearchTable(records) {
+  const tbody = document.getElementById('searchTableBody');
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-tip">未找到匹配文献</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.map(doc => `
+    <tr>
+      <td>${doc.id}</td>
+      <td title="${doc.fileName || ''}">${(doc.fileName || '').substring(0, 20)}</td>
+      <td title="${doc.title || ''}">${(doc.title || '').substring(0, 20)}</td>
+      <td>${(doc.authors || '').substring(0, 15)}</td>
+      <td>${(doc.sourceJournal || '').substring(0, 15)}</td>
+      <td>${formatDate(doc.createTime)}</td>
+      <td>${doc.downloadCount || 0}</td>
+      <td class="actions">
+        <button class="btn btn-primary btn-sm" onclick="viewDetail('${doc.id}')">详情</button>
+        <button class="btn btn-success btn-sm" onclick="downloadDoc('${doc.id}')">下载</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderSearchPagination() {
+  const totalPages = Math.ceil(searchTotal / 10) || 1;
+  const div = document.getElementById('searchPagination');
+  div.innerHTML = `
+    <span>共 ${searchTotal} 条</span>
+    <div class="page-btns">
+      <button onclick="searchPage=1;searchDocuments()" ${searchPage<=1?'disabled':''}>首页</button>
+      <button onclick="searchPage--;searchDocuments()" ${searchPage<=1?'disabled':''}>上一页</button>
+      <span style="padding:0 8px;">${searchPage} / ${totalPages}</span>
+      <button onclick="searchPage++;searchDocuments()" ${searchPage>=totalPages?'disabled':''}>下一页</button>
+    </div>
+  `;
+}
+
+// ==================== Recycle Bin ====================
+async function loadRecycleBin() {
+  let url = `/api/document/recycle-bin?page=${recyclePage}&size=10`;
+  const res = await api('GET', url);
+  if (res.code === 200) {
+    recycleTotal = res.data.total;
+    renderRecycleTable(res.data.records);
+    renderRecyclePagination();
+  } else {
+    document.getElementById('recycleTableBody').innerHTML = `<tr><td colspan="8" class="empty-tip">查询失败: ${res.message}</td></tr>`;
+  }
+}
+
+function renderRecycleTable(records) {
+  const tbody = document.getElementById('recycleTableBody');
+  selectedRecycleIds.clear();
+  document.getElementById('selectAllRecycle').checked = false;
+  updateRecycleBatchButtons();
+
+  if (!records || records.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-tip">回收站为空</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.map(doc => `
+    <tr>
+      <td><input type="checkbox" data-id="${doc.id}" onchange="toggleRecycleSelect('${doc.id}')"></td>
+      <td>${doc.id}</td>
+      <td title="${doc.fileName || ''}">${(doc.fileName || '').substring(0, 20)}</td>
+      <td>${(doc.title || '').substring(0, 20)}</td>
+      <td>${(doc.authors || '').substring(0, 15)}</td>
+      <td>${doc.folderName || '-'}</td>
+      <td>${formatDate(doc.deleteTime)}</td>
+      <td class="actions">
+        <button class="btn btn-success btn-sm" onclick="recoverDoc('${doc.id}')">恢复</button>
+        <button class="btn btn-danger btn-sm" onclick="permanentDeleteDoc('${doc.id}')">彻底删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderRecyclePagination() {
+  const totalPages = Math.ceil(recycleTotal / 10) || 1;
+  const div = document.getElementById('recyclePagination');
+  div.innerHTML = `
+    <span>共 ${recycleTotal} 条</span>
+    <div class="page-btns">
+      <button onclick="recyclePage=1;loadRecycleBin()" ${recyclePage<=1?'disabled':''}>首页</button>
+      <button onclick="recyclePage--;loadRecycleBin()" ${recyclePage<=1?'disabled':''}>上一页</button>
+      <span style="padding:0 8px;">${recyclePage} / ${totalPages}</span>
+      <button onclick="recyclePage++;loadRecycleBin()" ${recyclePage>=totalPages?'disabled':''}>下一页</button>
+    </div>
+  `;
+}
+
+function toggleRecycleSelect(id) {
+  if (selectedRecycleIds.has(id)) selectedRecycleIds.delete(id); else selectedRecycleIds.add(id);
+  updateRecycleBatchButtons();
+}
+
+function toggleSelectAllRecycle() {
+  const checked = document.getElementById('selectAllRecycle').checked;
+  document.querySelectorAll('#recycleTableBody input[type=checkbox]').forEach(cb => {
+    cb.checked = checked;
+    const id = cb.dataset.id; // 保持字符串，避免Long精度丢失
+    if (checked) selectedRecycleIds.add(id); else selectedRecycleIds.delete(id);
+  });
+  updateRecycleBatchButtons();
+}
+
+function updateRecycleBatchButtons() {
+  const hasSelection = selectedRecycleIds.size > 0;
+  document.getElementById('batchRecoverBtn').disabled = !hasSelection;
+  document.getElementById('batchPermanentDeleteBtn').disabled = !hasSelection;
+}
+
+async function recoverDoc(id) {
+  if (!confirm('确定恢复该文献？')) return;
+  const res = await api('PUT', `/api/document/${id}/recover`);
+  if (res.code === 200) { alert('恢复成功'); loadRecycleBin(); } else { alert('恢复失败: ' + res.message); }
+}
+
+async function batchRecoverDocs() {
+  if (selectedRecycleIds.size === 0) { alert('请先选择文献'); return; }
+  if (!confirm(`确定恢复选中的 ${selectedRecycleIds.size} 个文献？`)) return;
+  const res = await api('PUT', '/api/document/batch-recover', { documentIds: [...selectedRecycleIds] });
+  if (res.code === 200) { alert('批量恢复成功'); loadRecycleBin(); } else { alert('批量恢复失败: ' + res.message); }
+}
+
+async function permanentDeleteDoc(id) {
+  if (!confirm('彻底删除将不可恢复，确定继续？')) return;
+  const res = await api('DELETE', `/api/document/${id}/permanent`);
+  if (res.code === 200) { alert('彻底删除成功'); loadRecycleBin(); } else { alert('彻底删除失败: ' + res.message); }
+}
+
+async function batchPermanentDeleteDocs() {
+  if (selectedRecycleIds.size === 0) { alert('请先选择文献'); return; }
+  if (!confirm(`彻底删除 ${selectedRecycleIds.size} 个文献，不可恢复，确定继续？`)) return;
+  const res = await api('DELETE', '/api/document/batch-permanent', { documentIds: [...selectedRecycleIds] });
+  if (res.code === 200) {
+    alert('批量彻底删除完成');
+    loadRecycleBin();
+    loadFolderTree();
+  } else {
+    alert('批量彻底删除失败: ' + res.message);
+  }
+}
+
+// ==================== Utils ====================
+function formatDate(dt) {
+  if (!dt) return '-';
+  if (typeof dt === 'string') return dt.substring(0, 19).replace('T', ' ');
+  return dt;
+}
+
+function formatParseStatus(status) {
+  if (!status || status === 'NONE') return '<span style="color:#909399;">-</span>';
+  if (status === 'PENDING') return '<span style="color:#e6a23c;">解析中</span>';
+  if (status === 'SUCCESS') return '<span style="color:#67c23a;">已完成</span>';
+  if (status === 'FAILED') return '<span style="color:#f56c6c;">失败</span>';
+  return status;
+}
+
+// ==================== RAG 对话 ====================
+let currentChatSessionId = '';
+let chatSending = false;
+
+async function createChatSession() {
+  const res = await api('POST', '/api/session');
+  if (res.code === 200) {
+    currentChatSessionId = res.data.sessionId;
+    document.getElementById('chatSessionTitle').textContent = '新会话';
+    document.getElementById('chatMessages').innerHTML = '';
+    loadChatSessionList();
+  } else {
+    alert('创建会话失败: ' + res.message);
+  }
+}
+
+async function loadChatSessionList() {
+  const res = await api('GET', '/api/session/list');
+  if (res.code === 200) {
+    renderSessionList(res.data || []);
+  }
+}
+
+async function searchChatSessions() {
+  const keyword = document.getElementById('sessionSearchInput').value.trim();
+  if (!keyword) { loadChatSessionList(); return; }
+  const res = await api('GET', `/api/session/search?keyword=${encodeURIComponent(keyword)}`);
+  if (res.code === 200) {
+    renderSessionList(res.data || []);
+  }
+}
+
+function renderSessionList(sessions) {
+  const container = document.getElementById('sessionList');
+  if (!sessions.length) {
+    container.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:20px;font-size:12px;">暂无会话</div>';
+    return;
+  }
+  container.innerHTML = '';
+  sessions.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'session-item';
+    item.dataset.sid = s.sessionId;
+    item.style.cssText = `padding:8px 10px;cursor:pointer;border-radius:4px;margin-bottom:2px;font-size:12px;position:relative;${currentChatSessionId === s.sessionId ? 'background:var(--primary);color:#fff;' : 'border-bottom:1px solid #f0f0f0;'}`;
+
+    const titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:20px;';
+    titleDiv.textContent = s.title || '无标题';
+    titleDiv.onclick = () => selectChatSession(s.sessionId, s.title || '无标题');
+
+    const metaDiv = document.createElement('div');
+    metaDiv.style.cssText = `font-size:10px;${currentChatSessionId === s.sessionId ? 'color:rgba(255,255,255,0.7);' : 'color:var(--text-secondary);'}`;
+    metaDiv.textContent = `${s.messageCount || 0}条消息 | ${formatDate(s.createTime)}`;
+    metaDiv.onclick = () => selectChatSession(s.sessionId, s.title || '无标题');
+
+    const delSpan = document.createElement('span');
+    delSpan.textContent = '×';
+    delSpan.title = '删除会话';
+    delSpan.style.cssText = 'position:absolute;top:6px;right:8px;cursor:pointer;opacity:0.4;font-size:14px;';
+    delSpan.onmouseover = () => delSpan.style.opacity = '1';
+    delSpan.onmouseout = () => delSpan.style.opacity = '0.4';
+    delSpan.onclick = (e) => { e.stopPropagation(); deleteChatSession(s.sessionId); };
+
+    item.appendChild(titleDiv);
+    item.appendChild(metaDiv);
+    item.appendChild(delSpan);
+    container.appendChild(item);
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function selectChatSession(sessionId, title) {
+  currentChatSessionId = sessionId;
+  document.getElementById('chatSessionTitle').textContent = title;
+  // 高亮选中
+  document.querySelectorAll('.session-item').forEach(el => {
+    if (el.dataset.sid === sessionId) {
+      el.style.background = 'var(--primary)';
+      el.style.color = '#fff';
+      el.querySelectorAll('div:last-child').forEach(d => d.style.color = 'rgba(255,255,255,0.7)');
+    } else {
+      el.style.background = '';
+      el.style.color = '';
+      el.querySelectorAll('div:last-child').forEach(d => d.style.color = 'var(--text-secondary)');
+    }
+  });
+  await loadChatHistory();
+}
+
+async function deleteChatSession(sessionId) {
+  if (!confirm('确定删除该会话？')) return;
+  try {
+    const res = await api('POST', `/api/session/${sessionId}/delete`);
+    if (res.code === 200) {
+      if (currentChatSessionId === sessionId) {
+        currentChatSessionId = '';
+        document.getElementById('chatSessionTitle').textContent = '未选择会话';
+        document.getElementById('chatMessages').innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:40px;">请创建或选择会话开始对话</div>';
+      }
+      loadChatSessionList();
+    } else {
+      alert('删除失败: ' + (res.message || JSON.stringify(res)));
+    }
+  } catch (e) {
+    alert('删除异常: ' + e.message);
+  }
+}
+
+async function loadChatHistory() {
+  if (!currentChatSessionId) return;
+  const res = await api('GET', `/api/session/${currentChatSessionId}/messages?page=1&size=100`);
+  if (res.code === 200) {
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = '';
+    (res.data || []).forEach(msg => {
+      let citations = null;
+      if (msg.citationsJson) {
+        try { citations = JSON.parse(msg.citationsJson); } catch(e) {}
+      }
+      appendChatBubble(msg.role, msg.content, citations, msg.id);
+    });
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function appendChatBubble(role, content, citations, messageId) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.style.cssText = `margin-bottom:12px;display:flex;${role === 'user' ? 'justify-content:flex-end;' : ''}`;
+  const bubble = document.createElement('div');
+  bubble.className = role === 'assistant' ? 'md-content' : '';
+  bubble.style.cssText = `max-width:80%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;word-break:break-word;position:relative;${
+    role === 'user'
+      ? 'background:var(--primary);color:#fff;border-bottom-right-radius:4px;white-space:pre-wrap;'
+      : 'background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;'
+  }`;
+  // 助手消息用 marked 渲染 MD，用户消息保持纯文本
+  if (role === 'assistant') {
+    try { bubble.innerHTML = marked.parse(content || ''); } catch(e) { bubble.textContent = content; }
+  } else {
+    bubble.textContent = content;
+  }
+  div.appendChild(bubble);
+  // 用户消息添加编辑和重新生成按钮
+  if (role === 'user' && messageId) {
+    const btnGroup = document.createElement('span');
+    btnGroup.style.cssText = 'position:absolute;top:2px;right:4px;display:flex;gap:2px;';
+    // 编辑按钮（笔图标）
+    const editBtn = document.createElement('button');
+    editBtn.title = '编辑并重新生成';
+    editBtn.style.cssText = 'opacity:0.35;cursor:pointer;background:none;border:none;color:inherit;padding:2px 3px;display:flex;align-items:center;';
+    editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+    editBtn.onmouseover = () => editBtn.style.opacity = '1';
+    editBtn.onmouseout = () => editBtn.style.opacity = '0.35';
+    editBtn.onclick = () => editAndRegenerateMessage(messageId, content);
+    // 重新生成按钮（刷新图标）
+    const regenBtn = document.createElement('button');
+    regenBtn.title = '重新生成';
+    regenBtn.style.cssText = 'opacity:0.35;cursor:pointer;background:none;border:none;color:inherit;padding:2px 3px;display:flex;align-items:center;';
+    regenBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+    regenBtn.onmouseover = () => regenBtn.style.opacity = '1';
+    regenBtn.onmouseout = () => regenBtn.style.opacity = '0.35';
+    regenBtn.onclick = () => editAndRegenerateMessage(messageId, content, true);
+    btnGroup.appendChild(editBtn);
+    btnGroup.appendChild(regenBtn);
+    bubble.appendChild(btnGroup);
+  }
+  // 引用来源卡片
+  if (citations && citations.length > 0) {
+    const citeDiv = document.createElement('div');
+    citeDiv.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);';
+    const citeTitle = document.createElement('div');
+    citeTitle.style.cssText = 'font-size:11px;color:var(--text-secondary);margin-bottom:4px;font-weight:500;';
+    citeTitle.textContent = '引用来源:';
+    citeDiv.appendChild(citeTitle);
+    const citeList = document.createElement('div');
+    citeList.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+    citations.forEach((c, i) => {
+      const card = document.createElement('div');
+      card.className = 'citation-card';
+      const fileName = c.fileName || '未知文档';
+      const excerpt = (c.excerpt || '').substring(0, 80);
+      const citeNum = document.createElement('span');
+      citeNum.className = 'cite-num';
+      citeNum.textContent = c.referenceNumber || i + 1;
+      card.appendChild(citeNum);
+      const nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'flex:1;min-width:0;';
+      const nameLink = document.createElement('a');
+      nameLink.href = 'javascript:void(0)';
+      nameLink.title = excerpt;
+      nameLink.textContent = fileName;
+      nameLink.addEventListener('click', () => viewCitationDoc(c));
+      nameSpan.appendChild(nameLink);
+      const chunkSpan = document.createElement('span');
+      chunkSpan.style.cssText = 'color:var(--text-secondary);font-size:10px;';
+      chunkSpan.textContent = ' #' + c.chunkIndex;
+      nameSpan.appendChild(chunkSpan);
+      card.appendChild(nameSpan);
+      citeList.appendChild(card);
+    });
+    citeDiv.appendChild(citeList);
+    div.appendChild(citeDiv);
+  }
+  container.appendChild(div);
+}
+
+// 点击引用来源时，显示片段详情 + 下载
+function viewCitationDoc(citation) {
+  const c = typeof citation === 'string' ? JSON.parse(decodeURIComponent(citation)) : citation;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:#fff;border-radius:8px;padding:20px;min-width:400px;max-width:600px;max-height:80vh;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,0.15);';
+  panel.innerHTML = `
+    <h4 style="margin-bottom:12px;">引用来源详情</h4>
+    <div style="font-size:13px;margin-bottom:12px;line-height:1.8;">
+      <div><strong>文件名:</strong> ${escapeHtml(c.fileName)}</div>
+      <div><strong>分块序号:</strong> #${c.chunkIndex}</div>
+      ${c.docType ? `<div><strong>类型:</strong> ${c.docType === 'literature' ? '文献' : '内部文档'}</div>` : ''}
+    </div>
+    <div style="font-size:12px;margin-bottom:16px;padding:10px;background:#f8f9fa;border-radius:6px;line-height:1.7;max-height:200px;overflow-y:auto;">
+      ${escapeHtml(c.excerpt || '暂无片段内容')}
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" id="citeDownloadBtn">下载文件</button>
+      <button class="btn btn-sm" id="citeCloseBtn">关闭</button>
+    </div>
+  `;
+  // 绑定事件（避免 onclick 内联中 JSON 字符串转义问题）
+  panel.querySelector('#citeDownloadBtn').addEventListener('click', function() {
+    downloadCitationFile(c, this);
+  });
+  panel.querySelector('#citeCloseBtn').addEventListener('click', function() {
+    overlay.remove();
+  });
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
+async function downloadCitationFile(citationEncoded, btn) {
+  const c = typeof citationEncoded === 'string' ? JSON.parse(decodeURIComponent(citationEncoded)) : citationEncoded;
+  const origText = btn.textContent;
+  btn.textContent = '下载中...';
+  btn.disabled = true;
+  try {
+    let downloadUrl = null;
+    let fileName = c.fileName || 'download';
+    if (c.docType === 'literature' && c.docId) {
+      const res = await api('GET', `/api/document/${c.docId}/download`);
+      if (res.code === 200 && res.data) downloadUrl = res.data;
+    } else if (c.docType === 'doc' && c.docId) {
+      const res = await api('GET', `/api/doc/${c.docId}`);
+      if (res.code === 200 && res.data?.url) {
+        downloadUrl = res.data.url;
+        if (res.data.doc?.title) fileName = res.data.doc.title + '.' + (res.data.doc.fileType || 'md');
+      }
+    }
+    if (!downloadUrl) {
+      // 降级：尝试按文件名查找
+      const docId = findDocIdByFileName(c.fileName);
+      if (docId) {
+        const res = await api('GET', `/api/document/${docId}/download`);
+        if (res.code === 200 && res.data) downloadUrl = res.data;
+      }
+    }
+    if (downloadUrl) {
+      // 用 fetch + blob 触发下载，避免浏览器直接渲染文本文件
+      const resp = await fetch(downloadUrl);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+    }
+    alert('未找到对应文件，请手动在文献或内部文档列表中查找下载。');
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
+// 批量下载引用来源的文件
+async function batchDownloadCitations(citations) {
+  const items = citations.filter(c => c.docId).map(c => ({
+    docType: c.docType,
+    docId: String(c.docId)
+  }));
+
+  if (items.length === 0) {
+    alert('没有可下载的引用文件');
+    return;
+  }
+
+  const serverUrl = getServerUrl();
+  try {
+    const res = await fetch(serverUrl + '/api/citation/batch-download', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'citations.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const errText = await res.text();
+      alert('批量下载失败: ' + errText);
+    }
+  } catch (e) {
+    alert('批量下载异常: ' + e.message);
+  }
+}
+
+function findDocIdByFileName(fileName) {
+  const rows = document.querySelectorAll('#docTable tbody tr');
+  for (const row of rows) {
+    const nameCell = row.cells[1];
+    if (nameCell && nameCell.textContent.trim() === fileName.replace(/\.\w+$/, '')) {
+      return row.dataset.docId;
+    }
+  }
+  return null;
+}
+
+async function editAndRegenerateMessage(messageId, oldContent, keepContent = false) {
+  let newContent;
+  if (keepContent) {
+    // 直接重新生成，不修改内容
+    newContent = oldContent;
+  } else {
+    // 编辑消息内容
+    newContent = prompt('修改消息内容:', oldContent);
+    if (!newContent || newContent === oldContent) return;
+  }
+  if (!currentChatSessionId) return;
+
+  // 清空聊天区域，重新加载（后端 regenerate 接口会删除该消息之后的所有消息）
+  const container = document.getElementById('chatMessages');
+  container.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:20px;">重新生成中...</div>';
+
+  // 创建助手回复气泡
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-bottom:12px;';
+  const bubble = document.createElement('div');
+  bubble.className = 'md-content';
+  bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;word-break:break-word;background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;';
+  bubble.innerHTML = '<span style="color:#e6a23c;">思考中...</span>';
+  div.appendChild(bubble);
+
+  let fullContent = '';
+  let citations = [];
+
+  try {
+    const response = await fetch(getServerUrl() + '/api/chat/regenerate', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body: JSON.stringify({ sessionId: currentChatSessionId, messageId: String(messageId), newContent })
+    });
+
+    // 先重新加载历史消息（该消息之后的消息已被后端删除）
+    const historyRes = await api('GET', `/api/session/${currentChatSessionId}/messages?page=1&size=100`);
+    if (historyRes.code === 200) {
+      container.innerHTML = '';
+      (historyRes.data || []).forEach(msg => {
+        let cits = null;
+        if (msg.citationsJson) {
+          try { cits = JSON.parse(msg.citationsJson); } catch(e) {}
+        }
+        // 不使用 appendChatBubble 避免重复添加按钮
+        const d = document.createElement('div');
+        d.style.cssText = `margin-bottom:12px;display:flex;${msg.role === 'user' ? 'justify-content:flex-end;' : ''}`;
+        const b = document.createElement('div');
+        b.className = msg.role === 'assistant' ? 'md-content' : '';
+        b.style.cssText = `max-width:80%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;word-break:break-word;position:relative;${
+          msg.role === 'user'
+            ? 'background:var(--primary);color:#fff;border-bottom-right-radius:4px;white-space:pre-wrap;'
+            : 'background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;'
+        }`;
+        if (msg.role === 'assistant') {
+          try { b.innerHTML = marked.parse(msg.content || ''); } catch(e) { b.textContent = msg.content; }
+        } else {
+          b.textContent = msg.content;
+        }
+        d.appendChild(b);
+        if (cits && cits.length > 0) appendCitationCards(d, cits);
+        container.appendChild(d);
+      });
+    }
+
+    // 追加新的助手气泡
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data:') && !line.includes('thinking') && !line.includes('sessionId')) {
+          const data = line.substring(5).trim();
+          if (data) {
+            fullContent += data;
+            try { bubble.innerHTML = marked.parse(fullContent); } catch(e) { bubble.textContent = fullContent; }
+            container.scrollTop = container.scrollHeight;
+          }
+        } else if (line.startsWith('data:') && line.includes('sessionId')) {
+          try {
+            const doneData = JSON.parse(line.substring(5).trim());
+            if (doneData.citations) citations = doneData.citations;
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (citations.length > 0) {
+      appendCitationCards(div, citations);
+    }
+  } catch (e) {
+    bubble.innerHTML = `<span style="color:#f56c6c;">重新生成失败: ${e.message}</span>`;
+  }
+}
+
+async function sendChatMessage() {
+  if (chatSending) return;
+  const input = document.getElementById('chatInput');
+  const message = input.value.trim();
+  if (!message) return;
+  if (!currentChatSessionId) {
+    alert('请先创建或选择会话');
+    return;
+  }
+  input.value = '';
+  chatSending = true;
+  appendChatBubble('user', message);
+
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-bottom:12px;';
+  const bubble = document.createElement('div');
+  bubble.className = 'md-content';
+  bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;word-break:break-word;background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;';
+  bubble.innerHTML = '<span style="color:#e6a23c;">思考中...</span>';
+  div.appendChild(bubble);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+
+  let fullContent = '';
+  let citations = [];
+
+  try {
+    const response = await fetch(getServerUrl() + '/api/chat/stream', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body: JSON.stringify({ sessionId: currentChatSessionId, message })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      bubble.innerHTML = `<span style="color:#f56c6c;">请求失败 (HTTP ${response.status}): ${errText}</span>`;
+      chatSending = false;
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('event:delta')) {
+          // next line is data
+        } else if (line.startsWith('data:') && !line.includes('thinking') && !line.includes('sessionId')) {
+          const data = line.substring(5).trim();
+          if (data) {
+            fullContent += data;
+            try { bubble.innerHTML = marked.parse(fullContent); } catch(e) { bubble.textContent = fullContent; }
+            container.scrollTop = container.scrollHeight;
+          }
+        } else if (line.startsWith('event:done')) {
+          // done event follows
+        } else if (line.startsWith('data:') && line.includes('sessionId')) {
+          try {
+            const doneData = JSON.parse(line.substring(5).trim());
+            if (doneData.citations) citations = doneData.citations;
+            if (doneData.sessionId) currentChatSessionId = doneData.sessionId;
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (citations.length > 0) {
+      appendCitationCards(div, citations);
+    }
+
+    // 发送完成后刷新会话列表（标题可能已更新）
+    loadChatSessionList();
+  } catch (e) {
+    bubble.innerHTML = `<span style="color:#f56c6c;">请求失败: ${e.message}</span>`;
+  }
+  chatSending = false;
+}
+
+async function exportChatSession(format) {
+  if (!currentChatSessionId) { alert('请先选择会话'); return; }
+  const res = await api('GET', `/api/session/${currentChatSessionId}/export?format=${format}`);
+  if (res.code === 200) {
+    const content = res.data.content || '';
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session_${currentChatSessionId}.${format === 'json' ? 'json' : 'md'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    alert('导出失败: ' + res.message);
+  }
+}
+
+// ==================== ES 验证 ====================
+async function loadEsText() {
+  const docId = document.getElementById('esDebugDocId').value;
+  if (!docId) { alert('请输入文献ID'); return; }
+  const resDiv = document.getElementById('esDebugResult');
+  resDiv.innerHTML = '<div style="color:#e6a23c;">查询中...</div>';
+  const res = await api('GET', `/api/document/${docId}/es-text`);
+  if (res.code === 200) {
+    const data = res.data;
+    if (data.found === false) {
+      resDiv.innerHTML = `<div class="result-box" style="color:#909399;">未找到全文索引${data.error ? ': ' + data.error : ''}</div>`;
+    } else {
+      const text = data.text || '';
+      const preview = text.length > 2000 ? text.substring(0, 2000) + '...(截断)' : text;
+      resDiv.innerHTML = `<div class="result-box">
+        <strong>resource_text 索引内容</strong><br>
+        <span style="color:#909399;">resourceId: ${data.resourceId}, docType: ${data.docType}, fileType: ${data.fileType}, title: ${data.title}, textLength: ${text.length}</span>
+        <pre style="margin-top:8px;white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:400px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${preview}</pre>
+      </div>`;
+    }
+  } else {
+    resDiv.innerHTML = `<div class="result-box error">查询失败: ${res.message}</div>`;
+  }
+}
+
+async function loadEsChunks() {
+  const docId = document.getElementById('esDebugDocId').value;
+  if (!docId) { alert('请输入文献ID'); return; }
+  const resDiv = document.getElementById('esDebugResult');
+  resDiv.innerHTML = '<div style="color:#e6a23c;">查询中...</div>';
+  const res = await api('GET', `/api/document/${docId}/es-chunks?size=20`);
+  if (res.code === 200) {
+    const data = res.data;
+    if (data.found === false) {
+      resDiv.innerHTML = `<div class="result-box" style="color:#909399;">未找到分块索引${data.error ? ': ' + data.error : ''}</div>`;
+    } else {
+      const chunks = data.chunks || [];
+      let html = `<div class="result-box"><strong>doc_chunks 索引内容</strong> (共 ${data.total} 个分块)<br>`;
+      chunks.forEach((c, i) => {
+        const content = c.content || '';
+        const preview = content.length > 300 ? content.substring(0, 300) + '...' : content;
+        html += `<div style="margin-top:8px;padding:8px;background:#f5f5f5;border-radius:4px;">
+          <strong>分块 #${c.chunkIndex}</strong>
+          <span style="color:#909399;font-size:11px;"> | _id: ${c._id} | embeddingDim: ${c.embeddingDim || '-'} | fileName: ${c.fileName || '-'}</span>
+          <pre style="margin-top:4px;white-space:pre-wrap;word-break:break-word;font-size:11px;">${preview}</pre>
+        </div>`;
+      });
+      html += '</div>';
+      resDiv.innerHTML = html;
+    }
+  } else {
+    resDiv.innerHTML = `<div class="result-box error">查询失败: ${res.message}</div>`;
+  }
+}
+
+async function testVectorSearch() {
+  const query = document.getElementById('vectorSearchQuery').value.trim();
+  if (!query) { alert('请输入查询内容'); return; }
+  const resDiv = document.getElementById('vectorSearchResult');
+  resDiv.innerHTML = '<div style="color:#e6a23c;">检索中...</div>';
+  const res = await api('GET', `/api/search/vector-search?query=${encodeURIComponent(query)}&topK=5`);
+  if (res.code === 200) {
+    const results = res.data || [];
+    if (results.length === 0) {
+      resDiv.innerHTML = '<div class="result-box" style="color:#909399;">无匹配结果</div>';
+    } else {
+      let html = `<div class="result-box"><strong>向量检索结果</strong> (共 ${results.length} 条)<br>`;
+      results.forEach((r, i) => {
+        const content = r.content || '';
+        const preview = content.length > 300 ? content.substring(0, 300) + '...' : content;
+        html += `<div style="margin-top:8px;padding:8px;background:#f5f5f5;border-radius:4px;">
+          <strong>[${i+1}]</strong> <span style="color:#909399;font-size:11px;">docType: ${r.docType} | docId: ${r.docId} | fileName: ${r.fileName} | chunkIndex: ${r.chunkIndex}</span>
+          <pre style="margin-top:4px;white-space:pre-wrap;word-break:break-word;font-size:11px;">${preview}</pre>
+        </div>`;
+      });
+      html += '</div>';
+      resDiv.innerHTML = html;
+    }
+  } else {
+    resDiv.innerHTML = `<div class="result-box error">检索失败: ${res.message}</div>`;
+  }
+}
+
+// ==================== 引用来源卡片 ====================
+function appendCitationCards(parentDiv, citations) {
+  const citeDiv = document.createElement('div');
+  citeDiv.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);';
+  const citeTitle = document.createElement('div');
+  citeTitle.style.cssText = 'font-size:11px;color:var(--text-secondary);margin-bottom:4px;font-weight:500;display:flex;align-items:center;justify-content:space-between;';
+  citeTitle.innerHTML = '<span>引用来源:</span>';
+  // 批量下载按钮
+  if (citations.some(c => c.docId)) {
+    const batchBtn = document.createElement('button');
+    batchBtn.textContent = '批量下载';
+    batchBtn.style.cssText = 'font-size:10px;padding:2px 8px;border:1px solid var(--primary);color:var(--primary);background:none;border-radius:3px;cursor:pointer;';
+    batchBtn.onclick = () => batchDownloadCitations(citations);
+    citeTitle.appendChild(batchBtn);
+  }
+  citeDiv.appendChild(citeTitle);
+  const citeList = document.createElement('div');
+  citeList.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+  citations.forEach((c, i) => {
+    const card = document.createElement('div');
+    card.className = 'citation-card';
+    const fileName = c.fileName || '未知文档';
+    const excerpt = (c.excerpt || '').substring(0, 80);
+    const citeNum = document.createElement('span');
+    citeNum.className = 'cite-num';
+    citeNum.textContent = c.referenceNumber || i + 1;
+    card.appendChild(citeNum);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'flex:1;min-width:0;';
+    const nameLink = document.createElement('a');
+    nameLink.href = 'javascript:void(0)';
+    nameLink.title = excerpt;
+    nameLink.textContent = fileName;
+    nameLink.addEventListener('click', () => viewCitationDoc(c));
+    nameSpan.appendChild(nameLink);
+    const chunkSpan = document.createElement('span');
+    chunkSpan.style.cssText = 'color:var(--text-secondary);font-size:10px;';
+    chunkSpan.textContent = ' #' + c.chunkIndex;
+    nameSpan.appendChild(chunkSpan);
+    card.appendChild(nameSpan);
+
+    const dlLink = document.createElement('a');
+    dlLink.href = 'javascript:void(0)';
+    dlLink.title = '下载';
+    dlLink.style.cssText = 'font-size:13px;color:var(--primary);';
+    dlLink.innerHTML = '&#8595;';
+    dlLink.addEventListener('click', function() { downloadCitationFile(c, this); });
+    card.appendChild(dlLink);
+
+    citeList.appendChild(card);
+  });
+  citeDiv.appendChild(citeList);
+  parentDiv.appendChild(citeDiv);
+}
+
+// ==================== 内部文档 ====================
+async function searchInternalDocs() {
+  const keyword = document.getElementById('docSearchKeyword').value.trim();
+  if (!keyword) { alert('请输入搜索关键词'); return; }
+  const res = await api('GET', `/api/doc/search?keyword=${encodeURIComponent(keyword)}&page=1&size=20`);
+  if (res.code === 200) {
+    const hits = res.data?.hits || [];
+    const container = document.getElementById('docSearchHits');
+    document.getElementById('docSearchResults').style.display = 'block';
+    if (hits.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">未找到匹配的内部文档</p>';
+      return;
+    }
+    container.innerHTML = hits.map((h, i) => `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fafafa;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong style="font-size:13px;">${escapeHtml(h.title || '无标题')}</strong>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-sm" onclick="viewInternalDoc('${h.docId}')" style="font-size:11px;">查看</button>
+            <span style="font-size:11px;color:var(--text-secondary);">得分: ${h.score ? h.score.toFixed(2) : '-'}</span>
+          </div>
+        </div>
+        ${h.highlight ? `<p style="margin:6px 0 0;font-size:12px;color:#666;line-height:1.5;">${h.highlight}</p>` : ''}
+      </div>
+    `).join('');
+  } else {
+    alert('搜索失败: ' + res.message);
+  }
+}
+
+async function loadInternalDocs() {
+  const res = await api('GET', '/api/doc/page?page=1&size=50');
+  if (res.code === 200) {
+    const docs = res.data?.records || [];
+    const tbody = document.getElementById('internalDocBody');
+    tbody.innerHTML = docs.map(d => `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:6px 8px;font-size:11px;">${d.id}</td>
+        <td style="padding:6px 8px;">${escapeHtml(d.title)}</td>
+        <td style="padding:6px 8px;text-align:center;">${d.fileType || '-'}</td>
+        <td style="padding:6px 8px;text-align:center;">${formatParseStatus(d.parseStatus)}</td>
+        <td style="padding:6px 8px;text-align:center;font-size:11px;">${formatDate(d.createTime)}</td>
+        <td style="padding:6px 8px;text-align:center;">
+          <button class="btn btn-sm" onclick="viewInternalDoc('${d.id}')" style="font-size:11px;">查看</button>
+          <button class="btn btn-sm" onclick="deleteInternalDoc('${d.id}')" style="font-size:11px;color:var(--danger);">删除</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+}
+
+function showOnlineDocEditor() {
+  document.getElementById('onlineDocEditor').style.display = 'block';
+  document.getElementById('onlineDocTitle').value = '';
+  document.getElementById('onlineDocContent').value = '';
+}
+
+async function createOnlineDoc() {
+  const title = document.getElementById('onlineDocTitle').value.trim();
+  const content = document.getElementById('onlineDocContent').value;
+  const fileType = document.getElementById('onlineDocType').value;
+  if (!title) { alert('请输入标题'); return; }
+  if (!content.trim()) { alert('请输入内容'); return; }
+
+  const res = await api('POST', '/api/doc/online', { title, content, fileType });
+  if (res.code === 200) {
+    document.getElementById('onlineDocEditor').style.display = 'none';
+    loadInternalDocs();
+  } else {
+    alert('创建失败: ' + res.message);
+  }
+}
+
+async function uploadInternalDoc(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const title = file.name.replace(/\.\w+$/, '');
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('file', file);
+  const serverUrl = getServerUrl();
+  const res = await fetch(serverUrl + '/api/doc', {
+    method: 'POST',
+    headers: getHeaders(),
+    body: formData
+  }).then(r => r.json());
+  if (res.code === 200) {
+    loadInternalDocs();
+  } else {
+    alert('上传失败: ' + res.message);
+  }
+  input.value = '';
+}
+
+async function viewInternalDoc(id) {
+  const res = await api('GET', `/api/doc/${id}`);
+  if (res.code === 200) {
+    const doc = res.data.doc || res.data;
+    const content = res.data.content;
+    if (content) {
+      // 用弹窗渲染 Markdown 内容
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+      const panel = document.createElement('div');
+      panel.style.cssText = 'background:#fff;border-radius:8px;padding:24px;min-width:500px;max-width:800px;max-height:80vh;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,0.15);';
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;">${escapeHtml(doc.title || '文档预览')}</h3>
+          <button onclick="this.closest('div[style*=\"position:fixed\"]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#999;">&times;</button>
+        </div>
+        <div class="md-content" style="font-size:14px;line-height:1.8;"></div>
+      `;
+      const mdDiv = panel.querySelector('.md-content');
+      try { mdDiv.innerHTML = marked.parse(content); } catch(e) { mdDiv.textContent = content; }
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+    } else if (res.data.url) {
+      window.open(res.data.url, '_blank');
+    } else {
+      alert(`文档: ${doc.title}\n类型: ${doc.fileType}\n解析状态: ${doc.parseStatus}`);
+    }
+  }
+}
+
+async function deleteInternalDoc(id) {
+  if (!confirm('确定删除该内部文档？')) return;
+  const res = await api('DELETE', `/api/doc/${id}`);
+  if (res.code === 200) {
+    loadInternalDocs();
+  } else {
+    alert('删除失败: ' + res.message);
+  }
+}
+</script>
+</body>
+</html>

@@ -27,12 +27,22 @@ public interface ChatService {
     List<ChatMessageVO> getMessages(String sessionId, int page, int size);
 
     /**
+     * 获取用户所有会话列表
+     */
+    List<SessionVO> listSessions(Long userId);
+
+    /**
      * 搜索会话（按标题或消息内容模糊匹配）
      * @param userId 用户ID
      * @param keyword 搜索关键词
      * @return 匹配的会话列表
      */
     List<SessionVO> searchSessions(Long userId, String keyword);
+
+    /**
+     * 删除会话（逻辑删除）
+     */
+    void deleteSession(String sessionId, Long userId);
 
     /**
      * 导出会话

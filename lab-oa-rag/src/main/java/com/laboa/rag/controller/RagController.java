@@ -3,7 +3,15 @@ package com.laboa.rag.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import com.laboa.common.constant.Constants;
+import com.laboa.common.exception.BusinessException;
 import com.laboa.common.result.Result;
+import com.laboa.doc.entity.MdDocument;
+import com.laboa.doc.service.MdDocumentService;
+import com.laboa.file.entity.MinioFile;
+import com.laboa.file.service.FileService;
+import com.laboa.literature.entity.Literature;
+import com.laboa.literature.service.LiteratureService;
 import com.laboa.rag.dto.ChatRequest;
 import com.laboa.rag.dto.DocumentChunkDTO;
 import com.laboa.rag.service.ChatService;
@@ -11,6 +19,7 @@ import com.laboa.rag.service.ChatService.ChatEvent;
 import com.laboa.rag.service.ChatService.ChatMessageVO;
 import com.laboa.rag.service.ChatService.SessionVO;
 import com.laboa.rag.service.RetrievalService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -19,7 +28,11 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * RAG 聊天控制器
@@ -35,6 +48,9 @@ public class RagController {
     private final ChatService chatService;
     private final ElasticsearchClient elasticsearchClient;
     private final RetrievalService retrievalService;
+    private final FileService fileService;
+    private final LiteratureService literatureService;
+    private final MdDocumentService mdDocumentService;
 
     /**
      * 流式 RAG 对话
@@ -42,6 +58,7 @@ public class RagController {
      */
     @PostMapping(value = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> streamChat(@RequestBody ChatRequest request) {
+        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         String sessionId = request.getSessionId();
         String message = request.getMessage();
@@ -81,6 +98,7 @@ public class RagController {
      */
     @PostMapping("/api/session")
     public Result<Map<String, String>> createSession() {
+        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         String sessionId = chatService.createSession(userId);
         return Result.success(Map.of("sessionId", sessionId));
@@ -94,6 +112,7 @@ public class RagController {
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "20") int size) {
+        checkNotGuest();
         List<ChatMessageVO> messages = chatService.getMessages(sessionId, page, size);
         return Result.success(messages);
     }
@@ -115,6 +134,8 @@ public class RagController {
                   .append(",\"sourcePath\":\"").append(escapeJson(c.getSourcePath())).append("\"")
                   .append(",\"chunkIndex\":").append(c.getChunkIndex())
                   .append(",\"excerpt\":\"").append(escapeJson(c.getExcerpt())).append("\"")
+                  .append(",\"docType\":\"").append(escapeJson(c.getDocType())).append("\"")
+                  .append(",\"docId\":\"").append(escapeJson(c.getDocId())).append("\"")
                   .append("}");
             }
             sb.append("]");
@@ -196,11 +217,34 @@ public class RagController {
     }
 
     /**
+     * 删除会话
+     */
+    @PostMapping("/api/session/{sessionId}/delete")
+    public Result<Void> deleteSession(@PathVariable("sessionId") String sessionId) {
+        checkNotGuest();
+        Long userId = StpUtil.getLoginIdAsLong();
+        chatService.deleteSession(sessionId, userId);
+        return Result.success();
+    }
+
+    /**
+     * 获取用户所有会话列表
+     */
+    @GetMapping("/api/session/list")
+    public Result<List<SessionVO>> listSessions() {
+        checkNotGuest();
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<SessionVO> sessions = chatService.listSessions(userId);
+        return Result.success(sessions);
+    }
+
+    /**
      * 搜索会话（按标题或消息内容模糊匹配）
      */
     @GetMapping("/api/session/search")
     public Result<List<SessionVO>> searchSessions(
             @RequestParam("keyword") String keyword) {
+        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         List<SessionVO> sessions = chatService.searchSessions(userId, keyword);
         return Result.success(sessions);
@@ -214,6 +258,7 @@ public class RagController {
     public Result<Map<String, String>> exportSession(
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "format", defaultValue = "json") String format) {
+        checkNotGuest();
         String content = chatService.exportSession(sessionId, format);
         return Result.success(Map.of("format", format, "content", content));
     }
@@ -224,6 +269,7 @@ public class RagController {
      */
     @PostMapping(value = "/api/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> regenerateFromMessage(@RequestBody RegenerateRequest request) {
+        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
 
         if (request.getMessageId() == null || request.getMessageId().isBlank()) {
@@ -279,5 +325,106 @@ public class RagController {
         private String sessionId;
         private String messageId;
         private String newContent;
+    }
+
+    /**
+     * 统一批量下载引用来源文件（文献 + 内部文档），打包为 ZIP
+     */
+    @PostMapping("/api/citation/batch-download")
+    public void batchDownloadCitations(@RequestBody CitationBatchDownloadRequest request,
+                                       HttpServletResponse response) {
+        checkNotGuest();
+        Long userId = StpUtil.getLoginIdAsLong();
+
+        // 收集 fileId -> fileName（去重）
+        Map<Long, String> fileMap = new LinkedHashMap<>();
+
+        for (CitationBatchDownloadRequest.CitationItem item : request.getItems()) {
+            try {
+                Long fileId = null;
+                String fileName = null;
+                if ("literature".equals(item.getDocType()) && item.getDocId() != null) {
+                    Literature lit = literatureService.getById(Long.valueOf(item.getDocId()));
+                    if (lit != null) {
+                        fileId = lit.getFileId();
+                        fileName = lit.getFileName() != null ? lit.getFileName() : (lit.getTitle() + ".pdf");
+                        literatureService.recordDownload(lit.getId(), userId);
+                    }
+                } else if ("doc".equals(item.getDocType()) && item.getDocId() != null) {
+                    MdDocument doc = mdDocumentService.getById(Long.valueOf(item.getDocId()));
+                    if (doc != null) {
+                        fileId = doc.getFileId();
+                        fileName = doc.getTitle() + "." + (doc.getFileType() != null ? doc.getFileType() : "md");
+                    }
+                }
+                if (fileId != null && !fileMap.containsKey(fileId)) {
+                    fileMap.put(fileId, fileName);
+                }
+            } catch (Exception e) {
+                log.warn("获取引用文件信息失败: docType={}, docId={}", item.getDocType(), item.getDocId(), e);
+            }
+        }
+
+        if (fileMap.isEmpty()) {
+            throw new BusinessException("没有可下载的文件");
+        }
+
+        response.setContentType("application/zip");
+        response.setHeader("Content-Disposition", "attachment; filename=citations.zip");
+
+        try (OutputStream os = response.getOutputStream();
+             ZipOutputStream zos = new ZipOutputStream(os)) {
+
+            for (Map.Entry<Long, String> entry : fileMap.entrySet()) {
+                long fileId = entry.getKey();
+                String fileName = entry.getValue();
+                try {
+                    String presignedUrl = fileService.getPresignedUrl(fileId, 5);
+                    java.net.URL url = new java.net.URL(presignedUrl);
+                    try (InputStream is = url.openStream()) {
+                        ZipEntry zipEntry = new ZipEntry(fileName);
+                        zos.putNextEntry(zipEntry);
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = is.read(buffer)) > 0) {
+                            zos.write(buffer, 0, len);
+                        }
+                        zos.closeEntry();
+                    }
+                } catch (Exception e) {
+                    log.error("ZIP打包-文件下载失败: fileId={}, name={}", fileId, fileName, e);
+                }
+            }
+            zos.finish();
+        } catch (Exception e) {
+            log.error("批量下载ZIP失败", e);
+            throw new BusinessException("批量下载失败");
+        }
+    }
+
+    /**
+     * 批量下载请求DTO
+     */
+    @lombok.Data
+    public static class CitationBatchDownloadRequest {
+        private List<CitationItem> items;
+
+        @lombok.Data
+        public static class CitationItem {
+            private String docType;  // literature / doc
+            private String docId;
+        }
+    }
+
+    /**
+     * 校验非游客权限（游客无法进行RAG对话）
+     */
+    private void checkNotGuest() {
+        if (!StpUtil.isLogin()) {
+            throw new BusinessException(401, "请先登录");
+        }
+        if (StpUtil.hasRole(Constants.ROLE_GUEST)) {
+            throw new BusinessException(403, "游客无法进行RAG对话");
+        }
     }
 }

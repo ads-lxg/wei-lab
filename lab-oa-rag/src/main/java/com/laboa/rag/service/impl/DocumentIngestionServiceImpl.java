@@ -68,7 +68,7 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
             dto.setSourcePath(sourcePath);
             dto.setChunkIndex(i);
             dto.setDocType(docType);
-            dto.setDocId(docId);
+            dto.setDocId(docId != null ? String.valueOf(docId) : null);
             chunkDTOs.add(dto);
         }
 

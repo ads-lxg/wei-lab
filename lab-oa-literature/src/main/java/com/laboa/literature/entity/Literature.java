@@ -35,10 +35,16 @@ public class Literature {
 
     private String doi;
 
+    /** 所属目录ID，关联rag_folder.id */
+    private Long folderId;
+
     private Long fileId;
 
     /** 文件类型: pdf / docx / md / txt 等 */
     private String fileType;
+
+    /** 原始文件名 */
+    private String fileName;
 
     private Long uploaderId;
 
