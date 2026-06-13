@@ -28,6 +28,14 @@
             <artifactId>lab-oa-search</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.laboa</groupId>
+            <artifactId>lab-oa-notification</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.laboa</groupId>
+            <artifactId>lab-oa-system</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>

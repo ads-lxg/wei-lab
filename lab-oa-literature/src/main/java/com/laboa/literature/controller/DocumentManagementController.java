@@ -13,6 +13,8 @@ import com.laboa.literature.vo.BatchUploadResultVO;
 import com.laboa.literature.vo.LiteratureDetailVO;
 import com.laboa.literature.vo.LiteratureListItemVO;
 import com.laboa.literature.vo.LiteratureRecycleVO;
+import com.laboa.notification.service.NotificationService;
+import com.laboa.system.mapper.SysUserMapper;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.GetRequest;
 import co.elastic.clients.elasticsearch.core.GetResponse;
@@ -54,6 +56,8 @@ public class DocumentManagementController {
     private final DocumentManagementService documentManagementService;
     private final FileService fileService;
     private final ElasticsearchClient esClient;
+    private final NotificationService notificationService;
+    private final SysUserMapper sysUserMapper;
 
     // ==================== 上传文献 ====================
 
@@ -88,6 +92,23 @@ public class DocumentManagementController {
 
         Long uploaderId = StpUtil.getLoginIdAsLong();
         LiteratureDetailVO result = documentManagementService.upload(dto, file, uploaderId);
+
+        // 通知其他非游客用户（排除上传者自己）
+        String docTitle = result.getTitle() != null ? result.getTitle() : file.getOriginalFilename();
+        try {
+            String uploaderName = getUploaderRealName(uploaderId);
+            List<Long> targetUserIds = queryNonGuestUserIdsExcluding(uploaderId);
+            notificationService.sendNotificationBatch(
+                    targetUserIds,
+                    "新文献上传通知",
+                    uploaderName + " 上传了新文献「" + docTitle + "」",
+                    "LITERATURE_UPLOAD",
+                    result.getId()
+            );
+        } catch (Exception e) {
+            log.warn("发送文献上传通知失败: {}", e.getMessage());
+        }
+
         return Result.success(result);
     }
 
@@ -104,6 +125,22 @@ public class DocumentManagementController {
 
         Long uploaderId = StpUtil.getLoginIdAsLong();
         BatchUploadResultVO result = documentManagementService.batchUpload(folderId, excelFile, files, uploaderId);
+
+        // 通知其他非游客用户（排除上传者自己）
+        try {
+            String uploaderName = getUploaderRealName(uploaderId);
+            List<Long> targetUserIds = queryNonGuestUserIdsExcluding(uploaderId);
+            notificationService.sendNotificationBatch(
+                    targetUserIds,
+                    "文献批量上传通知",
+                    uploaderName + " 批量上传了 " + result.getSuccessCount() + " 份文献",
+                    "LITERATURE_BATCH_UPLOAD",
+                    null
+            );
+        } catch (Exception e) {
+            log.warn("发送文献批量上传通知失败: {}", e.getMessage());
+        }
+
         return Result.success(result);
     }
 
@@ -457,5 +494,32 @@ public class DocumentManagementController {
         if (!StpUtil.hasRole(Constants.ROLE_ADMIN)) {
             throw new BusinessException(403, "仅管理员可执行此操作");
         }
+    }
+
+    /**
+     * 查询所有非游客用户的ID列表
+     */
+    private List<Long> queryNonGuestUserIds() {
+        return sysUserMapper.selectNonGuestUserIds();
+    }
+
+    /**
+     * 查询非游客用户ID列表，排除指定用户（不给自己发通知）
+     */
+    private List<Long> queryNonGuestUserIdsExcluding(Long excludeUserId) {
+        List<Long> all = sysUserMapper.selectNonGuestUserIds();
+        all.remove(excludeUserId);
+        return all;
+    }
+
+    /**
+     * 获取上传者的真实姓名
+     */
+    private String getUploaderRealName(Long userId) {
+        com.laboa.system.entity.SysUser user = sysUserMapper.selectById(userId);
+        if (user != null && user.getRealName() != null && !user.getRealName().isBlank()) {
+            return user.getRealName();
+        }
+        return user != null ? user.getUsername() : "未知用户";
     }
 }
