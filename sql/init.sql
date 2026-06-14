@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS `sys_config`;
 DROP TABLE IF EXISTS `minio_file`;
 DROP TABLE IF EXISTS `md_document`;
 DROP TABLE IF EXISTS `literature`;
+DROP TABLE IF EXISTS `rag_folder`;
 DROP TABLE IF EXISTS `download_log`;
 DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `chat_message`;
@@ -152,6 +153,26 @@ CREATE TABLE `md_document` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内部技术文档表';
 
 -- =====================================================
+-- 文献目录表
+-- =====================================================
+
+CREATE TABLE `rag_folder` (
+    `id` bigint NOT NULL AUTO_INCREMENT,
+    `parent_id` bigint NOT NULL DEFAULT 0 COMMENT '父目录ID，0表示根目录',
+    `folder_name` varchar(100) NOT NULL COMMENT '目录名称',
+    `path` varchar(500) DEFAULT NULL COMMENT '目录路径，格式 /1/2/3',
+    `level_no` int DEFAULT 1 COMMENT '目录层级，从1开始',
+    `sort_order` int DEFAULT 0 COMMENT '排序号',
+    `create_user` bigint DEFAULT NULL COMMENT '创建人ID',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    PRIMARY KEY (`id`),
+    KEY `idx_parent_id` (`parent_id`),
+    KEY `idx_deleted` (`deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文献目录表';
+
+-- =====================================================
 -- 文献表
 -- =====================================================
 
@@ -164,8 +185,10 @@ CREATE TABLE `literature` (
     `publish_date` date DEFAULT NULL COMMENT '发表日期',
     `source_journal` varchar(300) DEFAULT NULL COMMENT '来源期刊',
     `doi` varchar(200) DEFAULT NULL,
+    `folder_id` bigint DEFAULT NULL COMMENT '所属目录ID，关联rag_folder.id',
     `file_id` bigint DEFAULT NULL COMMENT '关联 minio_file.id',
     `file_type` varchar(20) DEFAULT NULL COMMENT '文件类型: pdf/docx/md/txt',
+    `file_name` varchar(500) DEFAULT NULL COMMENT '原始文件名',
     `uploader_id` bigint DEFAULT NULL COMMENT '上传者用户ID',
     `permission_level` tinyint DEFAULT 1 COMMENT '1:仅查看 2:可下载',
     `rag_source` tinyint DEFAULT 0 COMMENT '是否RAG来源: 0=否 1=是',
@@ -181,6 +204,7 @@ CREATE TABLE `literature` (
     KEY `idx_keywords` (`keywords`(255)),
     KEY `idx_publish_date` (`publish_date`),
     KEY `idx_uploader_id` (`uploader_id`),
+    KEY `idx_folder_id` (`folder_id`),
     KEY `idx_deleted` (`deleted`),
     FOREIGN KEY (`file_id`) REFERENCES `minio_file`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文献表';
@@ -242,6 +266,7 @@ CREATE TABLE `chat_message` (
     `role` varchar(20) NOT NULL COMMENT 'user/assistant/system',
     `content` text NOT NULL,
     `citations_json` json DEFAULT NULL COMMENT '引用来源JSON',
+    `edited_at` datetime DEFAULT NULL COMMENT '编辑时间（非空表示该消息被编辑过）',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_session_id` (`session_id`),
