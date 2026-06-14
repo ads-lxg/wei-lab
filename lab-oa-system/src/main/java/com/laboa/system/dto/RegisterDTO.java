@@ -18,4 +18,7 @@ public class RegisterDTO {
     @NotBlank(message = "密码不能为空")
     @Size(min = 6, message = "密码长度不能少于6位")
     private String password;
+
+    /** 真实姓名（选填） */
+    private String realName;
 }

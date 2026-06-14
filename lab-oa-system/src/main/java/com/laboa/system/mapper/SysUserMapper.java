@@ -18,4 +18,10 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             "INNER JOIN sys_role r ON ur.role_id = r.id " +
             "WHERE u.deleted = 0 AND r.deleted = 0 AND r.role_code != 'guest'")
     List<Long> selectNonGuestUserIds();
+
+    @Select("SELECT DISTINCT p.perm_code FROM sys_permission p " +
+            "INNER JOIN role_permission rp ON p.id = rp.perm_id " +
+            "INNER JOIN user_role ur ON rp.role_id = ur.role_id " +
+            "WHERE ur.user_id = #{userId} AND p.deleted = 0")
+    List<String> selectPermissionCodesByUserId(Long userId);
 }

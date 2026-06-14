@@ -5,7 +5,6 @@ import com.laboa.system.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Collections;
 import java.util.List;
 
 @Component
@@ -16,7 +15,8 @@ public class StpInterfaceImpl implements StpInterface {
 
     @Override
     public List<String> getPermissionList(Object loginId, String loginType) {
-        return Collections.emptyList();
+        Long userId = Long.valueOf(loginId.toString());
+        return sysUserMapper.selectPermissionCodesByUserId(userId);
     }
 
     @Override

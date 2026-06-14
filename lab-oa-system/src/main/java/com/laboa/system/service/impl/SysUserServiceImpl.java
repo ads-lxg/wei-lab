@@ -1,6 +1,7 @@
 package com.laboa.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.laboa.common.exception.BusinessException;
@@ -80,15 +81,17 @@ public class SysUserServiceImpl implements SysUserService {
         user.setUsername(dto.getUsername());
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setEmail(dto.getEmail());
+        user.setRealName(dto.getRealName());
         user.setStatus(1);
         sysUserMapper.insert(user);
-        assignDefaultStudentRole(user.getId());
+        // 默认注册为游客，需管理员提升为 student / teacher
+        assignDefaultGuestRole(user.getId());
     }
 
-    private void assignDefaultStudentRole(Long userId) {
+    private void assignDefaultGuestRole(Long userId) {
         UserRole userRole = new UserRole();
         userRole.setUserId(userId);
-        userRole.setRoleId(3L);
+        userRole.setRoleId(4L); // guest
         userRoleMapper.insert(userRole);
     }
 
@@ -126,13 +129,18 @@ public class SysUserServiceImpl implements SysUserService {
     }
 
     @Override
+    @Transactional
     public void updateStatus(Long id, Integer status) {
         SysUser user = sysUserMapper.selectById(id);
         if (user == null) {
             throw new BusinessException("用户不存在");
         }
-        user.setStatus(status);
-        sysUserMapper.updateById(user);
+        sysUserMapper.update(null,
+                new LambdaUpdateWrapper<SysUser>()
+                        .eq(SysUser::getId, id)
+                        .set(SysUser::getStatus, status)
+                        .set(SysUser::getUpdateTime, java.time.LocalDateTime.now())
+        );
     }
 
     @Override
@@ -156,6 +164,56 @@ public class SysUserServiceImpl implements SysUserService {
                 userRoleMapper.insert(userRole);
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public void updateUserInfo(Long id, SysUser updateData) {
+        SysUser user = sysUserMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        var wrapper = new LambdaUpdateWrapper<SysUser>().eq(SysUser::getId, id);
+        boolean hasUpdate = false;
+        if (updateData.getRealName() != null && !updateData.getRealName().isBlank()) {
+            wrapper.set(SysUser::getRealName, updateData.getRealName());
+            hasUpdate = true;
+        }
+        if (updateData.getPhone() != null && !updateData.getPhone().isBlank()) {
+            wrapper.set(SysUser::getPhone, updateData.getPhone());
+            hasUpdate = true;
+        }
+        if (updateData.getEmail() != null && !updateData.getEmail().isBlank()) {
+            wrapper.set(SysUser::getEmail, updateData.getEmail());
+            hasUpdate = true;
+        }
+        if (hasUpdate) {
+            wrapper.set(SysUser::getUpdateTime, java.time.LocalDateTime.now());
+            sysUserMapper.update(null, wrapper);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void deleteUser(Long id) {
+        SysUser user = sysUserMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        // 检查是否是最后一个 admin
+        List<Long> adminIds = sysUserMapper.selectNonGuestUserIds();
+        long adminCount = adminIds.stream().filter(uid -> {
+            List<String> roles = sysUserMapper.selectRoleCodesByUserId(uid);
+            return roles.contains("admin");
+        }).count();
+        List<String> userRoles = sysUserMapper.selectRoleCodesByUserId(id);
+        if (userRoles.contains("admin") && adminCount <= 1) {
+            throw new BusinessException("不能删除最后一个管理员");
+        }
+        // 逻辑删除用户
+        sysUserMapper.deleteById(id);
+        // 删除用户的角色关联
+        userRoleMapper.delete(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, id));
     }
 
     private UserVO convertToVO(SysUser user) {

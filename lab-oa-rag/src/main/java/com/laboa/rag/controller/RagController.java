@@ -1,9 +1,9 @@
 package com.laboa.rag.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.stp.StpUtil;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import com.laboa.common.constant.Constants;
 import com.laboa.common.exception.BusinessException;
 import com.laboa.common.result.Result;
 import com.laboa.doc.entity.MdDocument;
@@ -56,9 +56,9 @@ public class RagController {
      * 流式 RAG 对话
      * 接收用户消息，通过 SSE 流式返回 LLM 回答
      */
+    @SaCheckPermission("rag:stream")
     @PostMapping(value = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> streamChat(@RequestBody ChatRequest request) {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         String sessionId = request.getSessionId();
         String message = request.getMessage();
@@ -96,9 +96,9 @@ public class RagController {
     /**
      * 创建新会话
      */
+    @SaCheckPermission("rag:session")
     @PostMapping("/api/session")
     public Result<Map<String, String>> createSession() {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         String sessionId = chatService.createSession(userId);
         return Result.success(Map.of("sessionId", sessionId));
@@ -107,12 +107,12 @@ public class RagController {
     /**
      * 获取会话历史消息
      */
+    @SaCheckPermission("rag:session")
     @GetMapping("/api/session/{sessionId}/messages")
     public Result<List<ChatMessageVO>> getMessages(
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "20") int size) {
-        checkNotGuest();
         List<ChatMessageVO> messages = chatService.getMessages(sessionId, page, size);
         return Result.success(messages);
     }
@@ -219,9 +219,9 @@ public class RagController {
     /**
      * 删除会话
      */
+    @SaCheckPermission("rag:session")
     @PostMapping("/api/session/{sessionId}/delete")
     public Result<Void> deleteSession(@PathVariable("sessionId") String sessionId) {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         chatService.deleteSession(sessionId, userId);
         return Result.success();
@@ -230,9 +230,9 @@ public class RagController {
     /**
      * 获取用户所有会话列表
      */
+    @SaCheckPermission("rag:session")
     @GetMapping("/api/session/list")
     public Result<List<SessionVO>> listSessions() {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         List<SessionVO> sessions = chatService.listSessions(userId);
         return Result.success(sessions);
@@ -241,10 +241,10 @@ public class RagController {
     /**
      * 搜索会话（按标题或消息内容模糊匹配）
      */
+    @SaCheckPermission("rag:session")
     @GetMapping("/api/session/search")
     public Result<List<SessionVO>> searchSessions(
             @RequestParam("keyword") String keyword) {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
         List<SessionVO> sessions = chatService.searchSessions(userId, keyword);
         return Result.success(sessions);
@@ -254,11 +254,11 @@ public class RagController {
      * 导出会话
      * @param format 导出格式: json(默认) / markdown
      */
+    @SaCheckPermission("rag:session")
     @GetMapping("/api/session/{sessionId}/export")
     public Result<Map<String, String>> exportSession(
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "format", defaultValue = "json") String format) {
-        checkNotGuest();
         String content = chatService.exportSession(sessionId, format);
         return Result.success(Map.of("format", format, "content", content));
     }
@@ -267,9 +267,9 @@ public class RagController {
      * 修改用户消息并重新生成助手回复（SSE流式）
      * 删除该消息之后的所有消息，修改该消息内容，重新触发RAG对话
      */
+    @SaCheckPermission("rag:stream")
     @PostMapping(value = "/api/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> regenerateFromMessage(@RequestBody RegenerateRequest request) {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
 
         if (request.getMessageId() == null || request.getMessageId().isBlank()) {
@@ -330,10 +330,10 @@ public class RagController {
     /**
      * 统一批量下载引用来源文件（文献 + 内部文档），打包为 ZIP
      */
+    @SaCheckPermission("rag:citation")
     @PostMapping("/api/citation/batch-download")
     public void batchDownloadCitations(@RequestBody CitationBatchDownloadRequest request,
                                        HttpServletResponse response) {
-        checkNotGuest();
         Long userId = StpUtil.getLoginIdAsLong();
 
         // 收集 fileId -> fileName（去重）
@@ -416,15 +416,4 @@ public class RagController {
         }
     }
 
-    /**
-     * 校验非游客权限（游客无法进行RAG对话）
-     */
-    private void checkNotGuest() {
-        if (!StpUtil.isLogin()) {
-            throw new BusinessException(401, "请先登录");
-        }
-        if (StpUtil.hasRole(Constants.ROLE_GUEST)) {
-            throw new BusinessException(403, "游客无法进行RAG对话");
-        }
-    }
 }

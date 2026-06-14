@@ -1,13 +1,31 @@
 package com.laboa.security.config;
 
+import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.listener.SaTokenListener;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Slf4j
 @Configuration
-public class SaTokenConfig {
+public class SaTokenConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 注册 Sa-Token 拦截器，使 @SaCheckRole / @SaCheckPermission 等注解生效
+        registry.addInterceptor(new SaInterceptor())
+                .addPathPatterns("/**")
+                .excludePathPatterns(
+                        "/api/user/login",
+                        "/api/user/register",
+                        "/ws/**",
+                        "/swagger-ui/**",
+                        "/v3/api-docs/**",
+                        "/doc.html"
+                );
+    }
 
     @Bean
     public SaTokenListener getSaTokenListener() {

@@ -1,5 +1,6 @@
 package com.laboa.file.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.laboa.common.result.Result;
 import com.laboa.file.dto.ChunkInitDTO;
 import com.laboa.file.dto.UploadCompleteDTO;
@@ -15,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 
 @Slf4j
+@SaCheckPermission("literature:upload")
 @RestController
 @RequestMapping("/api/upload")
 @RequiredArgsConstructor
