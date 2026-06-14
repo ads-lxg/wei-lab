@@ -8,7 +8,6 @@ import com.laboa.common.exception.BusinessException;
 import com.laboa.common.result.Result;
 import com.laboa.doc.entity.MdDocument;
 import com.laboa.doc.service.MdDocumentService;
-import com.laboa.file.entity.MinioFile;
 import com.laboa.file.service.FileService;
 import com.laboa.literature.entity.Literature;
 import com.laboa.literature.service.LiteratureService;
@@ -20,17 +19,17 @@ import com.laboa.rag.service.ChatService.ChatMessageVO;
 import com.laboa.rag.service.ChatService.SessionVO;
 import com.laboa.rag.service.RetrievalService;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -42,7 +41,6 @@ import java.util.zip.ZipOutputStream;
  */
 @Slf4j
 @RestController
-@RequiredArgsConstructor
 public class RagController {
 
     private final ChatService chatService;
@@ -52,45 +50,89 @@ public class RagController {
     private final LiteratureService literatureService;
     private final MdDocumentService mdDocumentService;
 
+    /** SSE 专用线程池 */
+    private final ExecutorService sseExecutor = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "sse-emitter");
+        t.setDaemon(true);
+        return t;
+    });
+
+    public RagController(ChatService chatService, ElasticsearchClient elasticsearchClient,
+                          RetrievalService retrievalService, FileService fileService,
+                          LiteratureService literatureService, MdDocumentService mdDocumentService) {
+        this.chatService = chatService;
+        this.elasticsearchClient = elasticsearchClient;
+        this.retrievalService = retrievalService;
+        this.fileService = fileService;
+        this.literatureService = literatureService;
+        this.mdDocumentService = mdDocumentService;
+    }
+
     /**
      * 流式 RAG 对话
-     * 接收用户消息，通过 SSE 流式返回 LLM 回答
+     * 使用 SseEmitter（Servlet 原生 SSE），确保在 Tomcat 下真正流式输出
      */
     @SaCheckPermission("rag:stream")
     @PostMapping(value = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> streamChat(@RequestBody ChatRequest request) {
+    public SseEmitter streamChat(@RequestBody ChatRequest request,
+                                  HttpServletResponse response) {
+        // 确保 SSE 不被任何代理/容器缓冲
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Connection", "keep-alive");
+
         Long userId = StpUtil.getLoginIdAsLong();
         String sessionId = request.getSessionId();
         String message = request.getMessage();
 
+        // 超时 3 分钟
+        SseEmitter emitter = new SseEmitter(180_000L);
+
         if (message == null || message.isBlank()) {
-            return Flux.just(ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"error\":\"消息不能为空\"}")
-                    .build());
+            try {
+                emitter.send(SseEmitter.event().name("error").data("{\"error\":\"消息不能为空\"}"));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
         }
 
-        return chatService.streamChat(sessionId, userId, message)
-                .map(event -> {
-                    if ("delta".equals(event.type())) {
-                        return ServerSentEvent.<String>builder()
-                                .event("delta")
-                                .data(event.content())
-                                .build();
-                    } else {
-                        // done 事件: 包含 citations、sessionId、ragAvailable
-                        return ServerSentEvent.<String>builder()
-                                .event("done")
-                                .data(buildDonePayload(event))
-                                .build();
-                    }
-                })
-                .startWith(Flux.defer(() -> Flux.just(
-                        ServerSentEvent.<String>builder()
-                                .event("info")
-                                .data("{\"status\":\"thinking\",\"message\":\"模型思考中...\"}")
-                                .build()
-                )));
+        // 先发送 info 事件
+        try {
+            emitter.send(SseEmitter.event().name("info").data("{\"status\":\"thinking\",\"message\":\"模型思考中...\"}"));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        }
+
+        // 在独立线程中订阅 Flux 并转发到 SseEmitter
+        sseExecutor.execute(() -> {
+            try {
+                chatService.streamChat(sessionId, userId, message)
+                        .subscribe(
+                                event -> {
+                                    try {
+                                        if ("delta".equals(event.type())) {
+                                            emitter.send(SseEmitter.event().name("delta").data(event.content()));
+                                        } else {
+                                            emitter.send(SseEmitter.event().name("done").data(buildDonePayload(event)));
+                                        }
+                                    } catch (IOException e) {
+                                        emitter.completeWithError(e);
+                                    }
+                                },
+                                emitter::completeWithError,
+                                emitter::complete
+                        );
+            } catch (Exception e) {
+                log.error("SSE流式对话异常", e);
+                try {
+                    emitter.send(SseEmitter.event().name("error").data("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}"));
+                } catch (IOException ignored) {}
+                emitter.completeWithError(e);
+            }
+        });
+
+        return emitter;
     }
 
     /**
@@ -151,7 +193,6 @@ public class RagController {
 
     /**
      * 查询 doc_chunks 的分块列表（按 docType + docId）
-     * 查看文档被 IK 分词器切成了多少个分块、每块的内容
      */
     @GetMapping("/api/search/chunks")
     public Result<List<Map<String, Object>>> queryChunks(
@@ -190,8 +231,7 @@ public class RagController {
     }
 
     /**
-     * 向量检索测试 — 输入自然语言查询，返回 doc_chunks 中最相似的 topK 个分块
-     * 流程：query → Embedding → ES k-NN 搜索 → 返回 content
+     * 向量检索测试
      */
     @GetMapping("/api/search/vector-search")
     public Result<List<Map<String, Object>>> vectorSearch(
@@ -228,6 +268,17 @@ public class RagController {
     }
 
     /**
+     * 批量删除会话
+     */
+    @SaCheckPermission("rag:session")
+    @PostMapping("/api/session/batch-delete")
+    public Result<Void> batchDeleteSessions(@RequestBody List<String> sessionIds) {
+        Long userId = StpUtil.getLoginIdAsLong();
+        chatService.batchDeleteSessions(sessionIds, userId);
+        return Result.success();
+    }
+
+    /**
      * 获取用户所有会话列表
      */
     @SaCheckPermission("rag:session")
@@ -252,7 +303,6 @@ public class RagController {
 
     /**
      * 导出会话
-     * @param format 导出格式: json(默认) / markdown
      */
     @SaCheckPermission("rag:session")
     @GetMapping("/api/session/{sessionId}/export")
@@ -265,56 +315,81 @@ public class RagController {
 
     /**
      * 修改用户消息并重新生成助手回复（SSE流式）
-     * 删除该消息之后的所有消息，修改该消息内容，重新触发RAG对话
      */
     @SaCheckPermission("rag:stream")
     @PostMapping(value = "/api/chat/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> regenerateFromMessage(@RequestBody RegenerateRequest request) {
+    public SseEmitter regenerateFromMessage(@RequestBody RegenerateRequest request,
+                                              HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Connection", "keep-alive");
+
+        SseEmitter emitter = new SseEmitter(180_000L);
         Long userId = StpUtil.getLoginIdAsLong();
 
         if (request.getMessageId() == null || request.getMessageId().isBlank()) {
-            return Flux.just(ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"error\":\"messageId不能为空\"}")
-                    .build());
+            try {
+                emitter.send(SseEmitter.event().name("error").data("{\"error\":\"messageId不能为空\"}"));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
         }
         if (request.getNewContent() == null || request.getNewContent().isBlank()) {
-            return Flux.just(ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"error\":\"新消息内容不能为空\"}")
-                    .build());
+            try {
+                emitter.send(SseEmitter.event().name("error").data("{\"error\":\"新消息内容不能为空\"}"));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
         }
 
         Long msgId;
         try {
             msgId = Long.parseLong(request.getMessageId());
         } catch (NumberFormatException e) {
-            return Flux.just(ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"error\":\"messageId格式错误\"}")
-                    .build());
+            try {
+                emitter.send(SseEmitter.event().name("error").data("{\"error\":\"messageId格式错误\"}"));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
         }
 
-        return chatService.regenerateFromMessage(request.getSessionId(), msgId, request.getNewContent(), userId)
-                .map(event -> {
-                    if ("delta".equals(event.type())) {
-                        return ServerSentEvent.<String>builder()
-                                .event("delta")
-                                .data(event.content())
-                                .build();
-                    } else {
-                        return ServerSentEvent.<String>builder()
-                                .event("done")
-                                .data(buildDonePayload(event))
-                                .build();
-                    }
-                })
-                .startWith(Flux.defer(() -> Flux.just(
-                        ServerSentEvent.<String>builder()
-                                .event("info")
-                                .data("{\"status\":\"thinking\",\"message\":\"重新生成中...\"}")
-                                .build()
-                )));
+        // 先发送 info 事件
+        try {
+            emitter.send(SseEmitter.event().name("info").data("{\"status\":\"thinking\",\"message\":\"重新生成中...\"}"));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        }
+
+        final Long finalMsgId = msgId;
+        sseExecutor.execute(() -> {
+            try {
+                chatService.regenerateFromMessage(request.getSessionId(), finalMsgId, request.getNewContent(), userId)
+                        .subscribe(
+                                event -> {
+                                    try {
+                                        if ("delta".equals(event.type())) {
+                                            emitter.send(SseEmitter.event().name("delta").data(event.content()));
+                                        } else {
+                                            emitter.send(SseEmitter.event().name("done").data(buildDonePayload(event)));
+                                        }
+                                    } catch (IOException e) {
+                                        emitter.completeWithError(e);
+                                    }
+                                },
+                                emitter::completeWithError,
+                                emitter::complete
+                        );
+            } catch (Exception e) {
+                log.error("SSE重新生成异常", e);
+                try {
+                    emitter.send(SseEmitter.event().name("error").data("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}"));
+                } catch (IOException ignored) {}
+                emitter.completeWithError(e);
+            }
+        });
+
+        return emitter;
     }
 
     /**
@@ -336,7 +411,6 @@ public class RagController {
                                        HttpServletResponse response) {
         Long userId = StpUtil.getLoginIdAsLong();
 
-        // 收集 fileId -> fileName（去重）
         Map<Long, String> fileMap = new LinkedHashMap<>();
 
         for (CitationBatchDownloadRequest.CitationItem item : request.getItems()) {

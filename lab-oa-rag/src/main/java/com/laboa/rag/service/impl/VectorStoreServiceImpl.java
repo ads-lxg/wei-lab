@@ -132,7 +132,7 @@ public class VectorStoreServiceImpl implements VectorStoreService {
     @Override
     public void deleteByDocId(String docType, Long docId) {
         try {
-            elasticsearchClient.deleteByQuery(d -> d
+            var response = elasticsearchClient.deleteByQuery(d -> d
                     .index(INDEX_NAME)
                     .query(q -> q
                             .bool(b -> b
@@ -140,10 +140,12 @@ public class VectorStoreServiceImpl implements VectorStoreService {
                                     .must(m -> m.term(t -> t.field("docId").value(docId)))
                             )
                     )
+                    .refresh(true)
             );
-            log.info("删除 docType={}, docId={} 的所有chunk", docType, docId);
+            log.info("删除 docType={}, docId={} 的所有chunk，删除数量={}", docType, docId,
+                    response.deleted() != null ? response.deleted() : "unknown");
         } catch (ElasticsearchException | IOException e) {
-            log.error("删除文档chunk失败: {}", e.getMessage(), e);
+            log.error("删除文档chunk失败: docType={}, docId={}, error={}", docType, docId, e.getMessage(), e);
         }
     }
 

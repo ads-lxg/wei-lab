@@ -1,0 +1,21 @@
+# ============================================================
+# LabOA 前端 — 独立开发部署
+# 使用: 在 lab-oa-frontend/ 目录下执行 docker-compose up -d
+# ============================================================
+
+services:
+  lab-oa-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lab-oa-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    # 如果后端在其他 Docker 网络中，取消注释：
+    # networks:
+    #   - lab-oa_default
+
+# networks:
+#   lab-oa_default:
+#     external: true

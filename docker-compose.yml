@@ -98,6 +98,8 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===== 后端服务（负载均衡后端池） =====
+  # 扩容示例: docker-compose up -d --scale lab-oa-app=3
   lab-oa-app:
     build:
       context: .
@@ -124,8 +126,11 @@ services:
       SERVER_PORT: 8080
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       TZ: Asia/Shanghai
+    # 生产环境：后端不对外开放端口，由 Nginx 反向代理统一入口
     ports:
-      - "8080:8080"
+      - "8080:8080"   # 开发/调试用，生产可注释此行隐藏后端端口
+    expose:
+      - "8080"
     depends_on:
       mysql:
         condition: service_healthy
@@ -137,6 +142,18 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+
+  # ===== 前端 Nginx（统一入口 + 反向代理 + 负载均衡） =====
+  lab-oa-frontend:
+    build:
+      context: ./lab-oa-frontend
+      dockerfile: Dockerfile
+    container_name: lab-oa-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - lab-oa-app
 
 volumes:
   mysql-data:

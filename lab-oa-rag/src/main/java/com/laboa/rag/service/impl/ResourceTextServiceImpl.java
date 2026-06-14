@@ -99,10 +99,10 @@ public class ResourceTextServiceImpl implements ResourceTextService {
         try {
             String esId = docType + "_" + resourceId;
 
-            // 使用 DeleteRequest，文档不存在也不报错
             esClient.delete(DeleteRequest.of(d -> d
                     .index(INDEX_NAME)
                     .id(esId)
+                    .refresh(co.elastic.clients.elasticsearch._types.Refresh.True)
             ));
 
             log.info("ES文本删除成功: resourceId={}, docType={}", resourceId, docType);

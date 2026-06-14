@@ -6,6 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.laboa.common.exception.BusinessException;
+import com.laboa.literature.entity.Literature;
+import com.laboa.literature.mapper.LiteratureMapper;
+import com.laboa.doc.entity.MdDocument;
+import com.laboa.doc.mapper.MdDocumentMapper;
 import com.laboa.rag.dto.Citation;
 import com.laboa.rag.dto.DocumentChunkDTO;
 import com.laboa.rag.entity.ChatMessage;
@@ -41,12 +45,14 @@ public class ChatServiceImpl implements ChatService {
     private final MemoryService memoryService;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final LiteratureMapper literatureMapper;
+    private final MdDocumentMapper mdDocumentMapper;
     private final ObjectMapper objectMapper;
 
-    @Value("${rag.system-prompt:你是一个智能助手，兼具专业知识与灵活应变能力。\n\n## 回答规则\n1. 当参考资料中包含与问题相关的内容时，优先基于参考资料回答，并用[编号]标注出处。在引用基础上可适当补充专业背景和延伸解释，使回答更完整。\n2. 当参考资料中没有直接相关内容，但你自身知识可以回答时，直接给出专业、详细的回答。\n3. 当问题涉及操作指引、流程说明等场景时，给出清晰的步骤式回答。\n4. 保持回答结构清晰，适当使用标题、列表、加粗等格式提升可读性。\n5. 如果对问题不确定，坦诚说明，不要编造信息。}")
+    @Value("${rag.system-prompt:你是一个智能助手，兼具专业知识与灵活应变能力。\n\n## 回答规则\n1. 当参考资料中包含与问题相关的内容时，优先基于参考资料回答，并用[编号]标注出处。在引用基础上可适当补充专业背景和延伸解释，使回答更完整。\n2. 当参考资料中没有直接相关内容，但你自身知识可以回答时，直接给出专业、详细的回答，不要使用[编号]引用标记。\n3. 当问题涉及操作指引、流程说明等场景时，给出清晰的步骤式回答。\n4. 保持回答结构清晰，适当使用标题、列表、加粗等格式提升可读性。\n5. 如果对问题不确定，坦诚说明，不要编造信息。}")
     private String ragSystemPrompt;
 
-    @Value("${rag.pure-chat-prompt:你是一个智能助手，擅长用专业、清晰的方式回答各类问题。回答时注意结构化表达，必要时使用列表和分步说明。如果不确定，请坦诚说明。}")
+    @Value("${rag.pure-chat-prompt:你是一个智能助手，擅长用专业、清晰的方式回答各类问题。回答时注意结构化表达，必要时使用列表和分步说明。如果不确定，请坦诚说明。\n\n重要：当前没有参考资料，请勿使用[编号]格式引用文献，也不要声称引用了某文献，直接基于你的知识回答即可。}")
     private String pureChatPrompt;
 
     @Value("${rag.top-k:5}")
@@ -90,11 +96,24 @@ public class ChatServiceImpl implements ChatService {
         }
         final boolean ragAvailable = isRagAvailable;
 
-        // 2. 构建 citations（仅 RAG 模式）
-        List<Citation> builtCitations = new ArrayList<>();
+        // 2. 过滤已删除文档的 chunks，确保上下文和 citations 使用同一份文档列表
+        List<DocumentChunkDTO> validDocs = new ArrayList<>();
         if (ragAvailable) {
-            for (int i = 0; i < relevantDocs.size(); i++) {
-                DocumentChunkDTO doc = relevantDocs.get(i);
+            for (DocumentChunkDTO doc : relevantDocs) {
+                if (isDocumentExists(doc.getDocType(), doc.getDocId())) {
+                    validDocs.add(doc);
+                } else {
+                    log.debug("跳过已删除的文档引用: docType={}, docId={}", doc.getDocType(), doc.getDocId());
+                }
+            }
+        }
+        final boolean ragAvailableFinal = !validDocs.isEmpty();
+
+        // 3. 构建 citations（基于过滤后的 validDocs，编号与上下文一致）
+        List<Citation> builtCitations = new ArrayList<>();
+        if (ragAvailableFinal) {
+            for (int i = 0; i < validDocs.size(); i++) {
+                DocumentChunkDTO doc = validDocs.get(i);
                 String excerpt = doc.getContent();
                 if (excerpt != null && excerpt.length() > 200) {
                     excerpt = excerpt.substring(0, 200) + "...";
@@ -104,19 +123,19 @@ public class ChatServiceImpl implements ChatService {
         }
         final List<Citation> citations = builtCitations;
 
-        // 3. 构建完整 prompt
+        // 4. 构建完整 prompt（使用过滤后的 validDocs，编号与 citations 一致）
         List<Map<String, String>> promptMessages;
-        if (ragAvailable) {
-            String contextText = formatContext(relevantDocs);
+        if (ragAvailableFinal) {
+            String contextText = formatContext(validDocs);
             promptMessages = buildRagPromptMessages(sid, contextText);
         } else {
             promptMessages = buildPureChatPromptMessages(sid);
         }
 
-        // 4. 压缩上下文
+        // 5. 压缩上下文
         memoryService.compressIfNeeded(sid);
 
-        // 5. 流式调用 LLM
+        // 6. 流式调用 LLM
         StringBuilder fullAnswer = new StringBuilder();
 
         return llmService.streamChat(promptMessages)
@@ -126,14 +145,14 @@ public class ChatServiceImpl implements ChatService {
                 })
                 .concatWith(Flux.defer(() -> {
                     // 流结束后：保存助手回复 + 发送 citation 事件
-                    String citationsJson = ragAvailable ? serializeCitations(citations) : null;
+                    String citationsJson = ragAvailableFinal ? serializeCitations(citations) : null;
                     memoryService.addMessage(sid, "assistant", fullAnswer.toString(), citationsJson);
 
                     if (updateTitle) {
                         updateSessionTitle(sid, message);
                     }
 
-                    return Flux.just(ChatEvent.done(citations, sid, ragAvailable));
+                    return Flux.just(ChatEvent.done(citations, sid, ragAvailableFinal));
                 }))
                 .onErrorResume(e -> {
                     log.error("对话流式输出异常: sessionId={}, error={}", sid, e.getMessage(), e);
@@ -278,6 +297,17 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
+    public void batchDeleteSessions(List<String> sessionIds, Long userId) {
+        for (String sessionId : sessionIds) {
+            try {
+                deleteSession(sessionId, userId);
+            } catch (BusinessException e) {
+                log.warn("批量删除会话跳过: sessionId={}, reason={}", sessionId, e.getMessage());
+            }
+        }
+    }
+
+    @Override
     public String exportSession(String sessionId, String format) {
         ChatSession session = chatSessionMapper.selectOne(
                 new LambdaQueryWrapper<ChatSession>()
@@ -419,6 +449,8 @@ public class ChatServiceImpl implements ChatService {
             return "未找到相关参考资料。";
         }
         StringBuilder sb = new StringBuilder();
+        sb.append("以下是 ").append(docs.size()).append(" 条参考资料，编号从 [1] 到 [")
+          .append(docs.size()).append("]。你只能引用这些编号，绝对不能引用不存在的编号。\n\n");
         for (int i = 0; i < docs.size(); i++) {
             DocumentChunkDTO doc = docs.get(i);
             sb.append("[").append(i + 1).append("] ");
@@ -462,6 +494,27 @@ public class ChatServiceImpl implements ChatService {
             session.setTitle(title);
             chatSessionMapper.updateById(session);
         }
+    }
+
+    /**
+     * 检查文献/文档是否仍然存在（未被逻辑删除）
+     */
+    private boolean isDocumentExists(String docType, String docIdStr) {
+        if (docIdStr == null || docType == null) return false;
+        try {
+            Long docId = Long.valueOf(docIdStr);
+            if ("literature".equals(docType)) {
+                return literatureMapper.selectById(docId) != null;
+            } else if ("doc".equals(docType)) {
+                return mdDocumentMapper.selectById(docId) != null;
+            }
+        } catch (NumberFormatException e) {
+            log.warn("docId格式错误: docType={}, docId={}", docType, docIdStr);
+            return false;
+        } catch (Exception e) {
+            log.warn("检查文档存在性失败: docType={}, docId={}, error={}", docType, docIdStr, e.getMessage());
+        }
+        return true; // 查询失败时不阻止，让前端处理
     }
 
     /**

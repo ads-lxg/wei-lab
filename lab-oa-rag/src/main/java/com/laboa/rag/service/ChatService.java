@@ -45,6 +45,11 @@ public interface ChatService {
     void deleteSession(String sessionId, Long userId);
 
     /**
+     * 批量删除会话（逻辑删除）
+     */
+    void batchDeleteSessions(List<String> sessionIds, Long userId);
+
+    /**
      * 导出会话
      * @param sessionId 会话ID
      * @param format 导出格式: json / markdown

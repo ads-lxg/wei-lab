@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS `user_role`;
 DROP TABLE IF EXISTS `sys_permission`;
 DROP TABLE IF EXISTS `sys_role`;
 DROP TABLE IF EXISTS `sys_user`;
+DROP TABLE IF EXISTS `sys_config`;
 DROP TABLE IF EXISTS `minio_file`;
 DROP TABLE IF EXISTS `md_document`;
 DROP TABLE IF EXISTS `literature`;
@@ -26,6 +27,17 @@ DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `chat_message`;
 DROP TABLE IF EXISTS `chat_session`;
 DROP TABLE IF EXISTS `outbox_event`;
+
+CREATE TABLE `sys_config` (
+    `id` bigint NOT NULL,
+    `config_key` varchar(100) NOT NULL COMMENT '配置键',
+    `config_value` text COMMENT '配置值',
+    `description` varchar(255) DEFAULT NULL COMMENT '描述',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_config_key` (`config_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置表';
 
 CREATE TABLE `sys_user` (
     `id` bigint NOT NULL,
@@ -304,7 +316,9 @@ INSERT INTO `sys_permission` (`id`, `perm_code`, `perm_name`, `parent_id`, `type
 (22, 'rag:citation',         '引用下载',                 18, 'api',  '/api/citation/**',                4),
 -- 通知中心
 (23, 'notification',         '通知中心',                 0,  'menu', '/notification',                  7),
-(24, 'notification:manage',  '通知管理',                 23, 'api',  '/api/notification/**',            1);
+(24, 'notification:manage',  '通知管理',                 23, 'api',  '/api/notification/**',            1),
+-- 系统配置
+(200, 'system:config',       '系统配置管理',              2,  'api',  '/api/config/**',                  50);
 
 INSERT INTO `user_role` (`user_id`, `role_id`) VALUES
 (1, 1),
@@ -314,7 +328,7 @@ INSERT INTO `user_role` (`user_id`, `role_id`) VALUES
 
 -- admin：全部权限
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
-(1,1),(1,2),(1,3),(1,4),(1,13),(1,5),(1,6),(1,7),(1,8),(1,25),(1,9),(1,10),(1,11),(1,12),(1,16),(1,17),(1,18),(1,19),(1,20),(1,21),(1,22),(1,23),(1,24);
+(1,1),(1,2),(1,3),(1,4),(1,13),(1,5),(1,6),(1,7),(1,8),(1,25),(1,9),(1,10),(1,11),(1,12),(1,16),(1,17),(1,18),(1,19),(1,20),(1,21),(1,22),(1,23),(1,24),(1,200);
 
 -- teacher：仪表盘、内部文档、文献（上传/下载/查看/目录）、搜索、AI问答（不含ES验证）、通知
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
@@ -324,6 +338,14 @@ INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (3,1),(3,5),(3,6),(3,7),(3,8),(3,9),(3,12),(3,16),(3,17),(3,18),(3,19),(3,20),(3,21),(3,22),(3,23),(3,24);
 
--- guest：仪表盘、文献查看、搜索、AI问答
+-- guest：仪表盘、文献查看、搜索（不可访问RAG问答、对话历史、知识储备）
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
-(4,1),(4,7),(4,12),(4,16),(4,17),(4,18),(4,19),(4,20),(4,21),(4,22);
+(4,1),(4,7),(4,12),(4,16),(4,17);
+
+-- =====================================================
+-- 系统配置初始数据
+-- =====================================================
+
+INSERT INTO `sys_config` (`id`, `config_key`, `config_value`, `description`) VALUES
+(1, 'site_name', '魏大鹏课题组文献阅读室', '网站名称'),
+(2, 'site_logo', '/title.png', '网站图标路径');
