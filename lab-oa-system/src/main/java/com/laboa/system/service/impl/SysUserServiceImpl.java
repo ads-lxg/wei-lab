@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.laboa.common.exception.BusinessException;
 import com.laboa.common.result.PageResult;
+import com.laboa.file.entity.MinioFile;
+import com.laboa.file.service.FileService;
 import com.laboa.security.util.JwtUtil;
 import com.laboa.system.dto.LoginDTO;
 import com.laboa.system.dto.RegisterDTO;
@@ -22,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ public class SysUserServiceImpl implements SysUserService {
     private final UserRoleMapper userRoleMapper;
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final FileService fileService;
 
     @Override
     public LoginVO login(LoginDTO dto) {
@@ -216,6 +220,72 @@ public class SysUserServiceImpl implements SysUserService {
         userRoleMapper.delete(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, id));
     }
 
+    // ==================== 头像 ====================
+
+    @Override
+    @Transactional
+    public String uploadAvatar(Long userId, MultipartFile file) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        // 删除旧头像文件
+        if (user.getAvatar() != null && !user.getAvatar().isBlank()) {
+            try {
+                fileService.deleteFile(Long.valueOf(user.getAvatar()));
+            } catch (Exception e) {
+                log.warn("删除旧头像文件失败: avatarId={}, error={}", user.getAvatar(), e.getMessage());
+            }
+        }
+        // 上传新头像到 MinIO
+        MinioFile minioFile = fileService.uploadFile(file, userId);
+        // 保存头像文件 ID
+        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
+                .eq(SysUser::getId, userId)
+                .set(SysUser::getAvatar, String.valueOf(minioFile.getId()))
+                .set(SysUser::getUpdateTime, java.time.LocalDateTime.now()));
+        return fileService.getPresignedUrl(minioFile.getId());
+    }
+
+    @Override
+    @Transactional
+    public void deleteAvatar(Long userId) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (user.getAvatar() == null || user.getAvatar().isBlank()) {
+            return;
+        }
+        // 删除 MinIO 文件
+        try {
+            fileService.deleteFile(Long.valueOf(user.getAvatar()));
+        } catch (Exception e) {
+            log.warn("删除头像文件失败: avatarId={}", user.getAvatar(), e);
+        }
+        // 清空头像字段
+        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
+                .eq(SysUser::getId, userId)
+                .set(SysUser::getAvatar, null)
+                .set(SysUser::getUpdateTime, java.time.LocalDateTime.now()));
+    }
+
+    @Override
+    public String getAvatarUrl(Long userId) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null || user.getAvatar() == null || user.getAvatar().isBlank()) {
+            return null;
+        }
+        try {
+            return fileService.getPresignedUrl(Long.valueOf(user.getAvatar()));
+        } catch (Exception e) {
+            log.warn("获取头像预签名URL失败: userId={}, avatarId={}", userId, user.getAvatar(), e);
+            return null;
+        }
+    }
+
+    // ==================== 私有方法 ====================
+
     private UserVO convertToVO(SysUser user) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());
@@ -223,7 +293,14 @@ public class SysUserServiceImpl implements SysUserService {
         vo.setEmail(user.getEmail());
         vo.setPhone(user.getPhone());
         vo.setRealName(user.getRealName());
-        vo.setAvatar(user.getAvatar());
+        // 头像: fileId → 预签名URL
+        if (user.getAvatar() != null && !user.getAvatar().isBlank()) {
+            try {
+                vo.setAvatar(fileService.getPresignedUrl(Long.valueOf(user.getAvatar())));
+            } catch (Exception e) {
+                vo.setAvatar(null);
+            }
+        }
         vo.setStatus(user.getStatus());
         vo.setCreateTime(user.getCreateTime());
         List<String> roles = sysUserMapper.selectRoleCodesByUserId(user.getId());

@@ -12,11 +12,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -61,6 +64,21 @@ public class UserController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable("id") Long id) {
         sysUserService.deleteUser(id);
+        return Result.success();
+    }
+
+    /** 管理员更换指定用户头像 */
+    @PostMapping("/{id}/avatar")
+    public Result<String> updateAvatar(@PathVariable("id") Long id,
+                                       @RequestPart("file") MultipartFile file) {
+        String url = sysUserService.uploadAvatar(id, file);
+        return Result.success(url);
+    }
+
+    /** 管理员删除指定用户头像 */
+    @DeleteMapping("/{id}/avatar")
+    public Result<Void> deleteAvatar(@PathVariable("id") Long id) {
+        sysUserService.deleteAvatar(id);
         return Result.success();
     }
 }

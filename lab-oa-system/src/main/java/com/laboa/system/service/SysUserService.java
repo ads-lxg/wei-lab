@@ -7,6 +7,7 @@ import com.laboa.system.dto.UserPageDTO;
 import com.laboa.system.entity.SysUser;
 import com.laboa.system.vo.LoginVO;
 import com.laboa.system.vo.UserVO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -29,4 +30,13 @@ public interface SysUserService {
 
     /** 删除用户（逻辑删除） */
     void deleteUser(Long id);
+
+    /** 上传头像，返回头像预览 URL */
+    String uploadAvatar(Long userId, MultipartFile file);
+
+    /** 删除头像，恢复默认 */
+    void deleteAvatar(Long userId);
+
+    /** 获取头像 URL（用户无头像时返回 null） */
+    String getAvatarUrl(Long userId);
 }

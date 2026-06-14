@@ -101,8 +101,8 @@ tr:hover{background:#fafbfc}
   </div>
   <div class="card">
     <h3>用户列表 <span class="sub" id="userTotal"></span></h3>
-    <table><thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>邮箱</th><th>手机</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
-    <tbody id="userTableBody"><tr><td colspan="9" style="text-align:center;color:var(--text-secondary);padding:30px">请用管理员账号登录</td></tr></tbody></table>
+    <table><thead><tr><th>ID</th><th>头像</th><th>用户名</th><th>姓名</th><th>邮箱</th><th>手机</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
+    <tbody id="userTableBody"><tr><td colspan="10" style="text-align:center;color:var(--text-secondary);padding:30px">请用管理员账号登录</td></tr></tbody></table>
   </div>
 </div>
 
@@ -145,6 +145,8 @@ tr:hover{background:#fafbfc}
     <input type="password" id="regPassword" placeholder="密码（至少6位）">
     <input type="email" id="regEmail" placeholder="邮箱（必填）">
     <input type="text" id="regRealName" placeholder="真实姓名（选填）">
+    <label style="font-size:12px;color:var(--text-secondary);margin-top:4px;display:block">头像（选填，注册后可随时更换）</label>
+    <input type="file" id="regAvatar" accept="image/*" style="font-size:12px;margin-bottom:8px">
     <button class="btn btn-pri" id="btnRegister">注册</button>
     <div class="msg" id="regMsg" style="margin-top:10px"></div>
   </div>
@@ -194,6 +196,8 @@ tr:hover{background:#fafbfc}
     <div class="msg" id="roleModalMsg"></div>
   </div>
 </div>
+
+<input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="uploadAvatar()">
 
 <script>
 let token='',currentUser=null,allRoles=[],allPerms=[];
@@ -255,12 +259,13 @@ async function loadUserList(){
   if(r.code!==200){showMsg('userMsg','err','加载失败: '+(r.message||'请确认使用管理员账号登录'));return}
   S('userTotal').textContent='共 '+r.data.total+' 条';
   const t=S('userTableBody');
-  if(!r.data.records||!r.data.records.length){t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-secondary)">无数据</td></tr>';return}
+  if(!r.data.records||!r.data.records.length){t.innerHTML='<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-secondary)">无数据</td></tr>';return}
   t.innerHTML='';
   r.data.records.forEach(function(u){
     var tr=document.createElement('tr');
     var roles=u.roles||[];
-    tr.innerHTML='<td>'+u.id+'</td><td>'+he(u.username)+'</td><td>'+he(u.realName||'-')+'</td><td>'+he(u.email||'-')+'</td><td>'+he(u.phone||'-')+'</td><td>'+roles.map(function(r){return '<span class="badge badge-'+r+'">'+r+'</span>'}).join(' ')+'</td><td>'+(u.status===1?'<span style="color:#27ae60">启用</span>':'<span style="color:#e74c3c">禁用</span>')+'</td><td>'+fmt(u.createTime)+'</td><td></td>';
+    var avatarHtml=u.avatar?'<img src="'+u.avatar+'" style="width:28px;height:28px;border-radius:50%;object-fit:cover" onerror="this.style.display=\'none\'">':'<span style="font-size:10px;color:#aaa">默认</span>';
+    tr.innerHTML='<td>'+u.id+'</td><td style="text-align:center">'+avatarHtml+'</td><td>'+he(u.username)+'</td><td>'+he(u.realName||'-')+'</td><td>'+he(u.email||'-')+'</td><td>'+he(u.phone||'-')+'</td><td>'+roles.map(function(r){return '<span class="badge badge-'+r+'">'+r+'</span>'}).join(' ')+'</td><td>'+(u.status===1?'<span style="color:#27ae60">启用</span>':'<span style="color:#e74c3c">禁用</span>')+'</td><td>'+fmt(u.createTime)+'</td><td></td>';
     var td=tr.querySelector('td:last-child');
 
     var btnToggle=document.createElement('button');
@@ -291,6 +296,20 @@ async function loadUserList(){
     (function(uid,uname){btnDel.addEventListener('click',function(){deleteUser(uid,uname)})})(u.id,u.username);
     td.appendChild(btnDel);
 
+    var btnAvatar=document.createElement('button');
+    btnAvatar.className='btn-sm';
+    btnAvatar.style.cssText='background:#e8f0fe;border:1px solid #4285f4;color:#1967d2';
+    btnAvatar.textContent='头像';
+    (function(uid){btnAvatar.addEventListener('click',function(){triggerAvatarUpload(uid)})})(u.id);
+    td.appendChild(btnAvatar);
+
+    var btnDelAvatar=document.createElement('button');
+    btnDelAvatar.className='btn-sm';
+    btnDelAvatar.style.cssText='background:#fce8e6;border:1px solid #e74c3c;color:#c0392b';
+    btnDelAvatar.textContent='删头像';
+    (function(uid){btnDelAvatar.addEventListener('click',function(){deleteAvatar(uid)})})(u.id);
+    td.appendChild(btnDelAvatar);
+
     t.appendChild(tr);
   });
 }
@@ -315,6 +334,39 @@ async function deleteUser(id,uname){
   if(!confirm('确定删除用户「'+uname+'」？'))return;
   var r=await api('DELETE','/api/admin/user/'+id);
   if(r.code===200)loadUserList();else showMsg('userMsg','err','删除失败: '+(r.message||JSON.stringify(r)));
+}
+
+// ==================== Avatar ====================
+var _avatarTargetUserId=null;
+
+function triggerAvatarUpload(uid){
+  _avatarTargetUserId=uid;
+  var inp=document.getElementById('avatarFileInput');
+  inp.value='';inp.click();
+}
+
+async function uploadAvatar(){
+  var uid=_avatarTargetUserId;
+  var file=document.getElementById('avatarFileInput').files[0];
+  if(!file||!uid)return;
+  var fd=new FormData();fd.append('file',file);
+  var r=await apiFormData('POST','/api/admin/user/'+uid+'/avatar',fd);
+  if(r.code===200){loadUserList();showMsg('userMsg','ok','头像上传成功')}
+  else showMsg('userMsg','err','头像上传失败: '+(r.message||JSON.stringify(r)));
+}
+
+async function deleteAvatar(uid){
+  if(!confirm('确定删除该用户头像？'))return;
+  var r=await api('DELETE','/api/admin/user/'+uid+'/avatar');
+  if(r.code===200)loadUserList();else showMsg('userMsg','err','删除失败: '+(r.message||JSON.stringify(r)));
+}
+
+async function apiFormData(method,path,formData){
+  var opts={method,headers:{}};
+  if(token)opts.headers['Authorization']=token;
+  opts.body=formData;
+  var res=await fetch(baseUrl()+path,opts);
+  return await res.json();
 }
 
 // ==================== Role Assignment ====================
@@ -465,8 +517,26 @@ async function register(){
   if(!u||!pw||!em){showMsg('regMsg','err','请填写必填项');return}
   if(pw.length<6){showMsg('regMsg','err','密码至少6位');return}
   var r=await api('POST','/api/user/register',{username:u,password:pw,email:em,realName:rn||undefined});
-  if(r.code===200){showMsg('regMsg','ok','注册成功！默认为游客，联系管理员提升为教师/学生。');S('regUsername').value='';S('regPassword').value='';S('regEmail').value='';S('regRealName').value=''}
-  else showMsg('regMsg','err','注册失败: '+(r.message||JSON.stringify(r)));
+  if(r.code!==200){showMsg('regMsg','err','注册失败: '+(r.message||JSON.stringify(r)));return}
+  // 注册成功，如果有头像则登录后上传
+  var avatarFile=S('regAvatar').files[0];
+  if(avatarFile){
+    // 登录
+    var lr=await api('POST','/api/user/login',{username:u,password:pw});
+    if(lr.code===200){
+      var saveToken=token;token=lr.data.token;
+      var fd=new FormData();fd.append('file',avatarFile);
+      var ar=await apiFormData('POST','/api/user/avatar',fd);
+      token=saveToken;
+      if(ar.code===200)showMsg('regMsg','ok','注册成功！头像已上传。默认为游客，联系管理员提升。');
+      else showMsg('regMsg','ok','注册成功（头像上传失败），默认为游客。');
+    } else {
+      showMsg('regMsg','ok','注册成功！默认为游客，联系管理员提升为教师/学生。');
+    }
+  } else {
+    showMsg('regMsg','ok','注册成功！默认为游客，联系管理员提升为教师/学生。');
+  }
+  S('regUsername').value='';S('regPassword').value='';S('regEmail').value='';S('regRealName').value='';S('regAvatar').value='';
 }
 
 // ==================== Event Binding ====================
