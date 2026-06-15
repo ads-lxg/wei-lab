@@ -34,4 +34,9 @@ public interface FileService {
      * 获取文件的文本内容（适用于文本类文件如md/txt）
      */
     String getFileContent(Long fileId);
+
+    /**
+     * 获取文件输入流（用于流式代理下载/预览）
+     */
+    InputStream getFileStream(Long fileId);
 }

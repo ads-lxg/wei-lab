@@ -282,4 +282,18 @@ public class FileServiceImpl implements FileService {
             throw new BusinessException("读取文件内容失败");
         }
     }
+
+    @Override
+    public InputStream getFileStream(Long fileId) {
+        MinioFile minioFile = getById(fileId);
+        try {
+            return minioClient.getObject(io.minio.GetObjectArgs.builder()
+                    .bucket(minioFile.getBucket())
+                    .object(minioFile.getStoredName())
+                    .build());
+        } catch (Exception e) {
+            log.error("Failed to get file stream: {}", fileId, e);
+            throw new BusinessException("读取文件失败");
+        }
+    }
 }

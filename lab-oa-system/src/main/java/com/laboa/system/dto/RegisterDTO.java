@@ -21,4 +21,7 @@ public class RegisterDTO {
 
     /** 真实姓名（选填） */
     private String realName;
+
+    /** 手机号（选填） */
+    private String phone;
 }

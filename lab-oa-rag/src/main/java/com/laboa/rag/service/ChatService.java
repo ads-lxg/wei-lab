@@ -24,7 +24,7 @@ public interface ChatService {
     /**
      * 获取会话历史消息
      */
-    List<ChatMessageVO> getMessages(String sessionId, int page, int size);
+    List<ChatMessageVO> getMessages(String sessionId, Long userId, int page, int size);
 
     /**
      * 获取用户所有会话列表

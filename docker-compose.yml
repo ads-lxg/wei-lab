@@ -125,6 +125,8 @@ services:
       RABBITMQ_PASS: ${RABBITMQ_PASS:-guest}
       SERVER_PORT: 8080
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       TZ: Asia/Shanghai
     # 生产环境：后端不对外开放端口，由 Nginx 反向代理统一入口
     ports:

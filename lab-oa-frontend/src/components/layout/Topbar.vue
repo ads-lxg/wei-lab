@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { getNotifications, getUnreadCount, markAllAsRead } from '@/api/notification'
 import type { Notification } from '@/types'
@@ -44,6 +45,7 @@ async function handleMarkAllRead() {
 
 function handleLogout() {
   userStore.logout()
+  useChatStore().clearMessages()
   router.replace('/login')
 }
 </script>

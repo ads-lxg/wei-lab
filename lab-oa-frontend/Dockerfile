@@ -1,23 +1,7 @@
 # ============================================================
-# LabOA 前端 — 多阶段构建
-# Stage 1: 构建 Vue 应用
-# Stage 2: Nginx 运行
+# LabOA 前端 — 使用预构建 dist（本地构建后直接部署）
 # ============================================================
 
-# ----- Stage 1: Build -----
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# 安装依赖
-COPY package.json package-lock.json* ./
-RUN npm ci --registry=https://registry.npmmirror.com
-
-# 复制源码构建
-COPY . .
-RUN npm run build
-
-# ----- Stage 2: Runtime -----
 FROM nginx:1.27-alpine
 
 # 时区
@@ -28,8 +12,8 @@ RUN apk add --no-cache tzdata && \
 # 自定义 Nginx 配置
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# 复制构建产物
-COPY --from=builder /app/dist /usr/share/nginx/html
+# 直接复制预构建产物
+COPY dist /usr/share/nginx/html
 
 EXPOSE 80
 

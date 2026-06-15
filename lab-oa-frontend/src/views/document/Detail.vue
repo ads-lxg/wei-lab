@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getDocumentDetail, getDownloadUrl } from '@/api/document'
+import { getDocumentDetail, getDownloadUrl, getPreviewUrl } from '@/api/document'
 import { WarningFilled, Document, Reading, CollectionTag, Download, View, CopyDocument, ArrowLeft } from '@element-plus/icons-vue'
 import type { LiteratureDetailVO } from '@/types'
 
@@ -26,7 +26,7 @@ async function fetchDetail() {
     // If PDF, try to get preview URL
     if (isPdf.value) {
       try {
-        const url = await getDownloadUrl(id)
+        const url = await getPreviewUrl(id)
         pdfUrl.value = url
         showPdf.value = true
       } catch { /* preview not critical */ }

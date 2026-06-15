@@ -155,7 +155,8 @@ public class RagController {
             @PathVariable("sessionId") String sessionId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "20") int size) {
-        List<ChatMessageVO> messages = chatService.getMessages(sessionId, page, size);
+        Long userId = StpUtil.getLoginIdAsLong();
+        List<ChatMessageVO> messages = chatService.getMessages(sessionId, userId, page, size);
         return Result.success(messages);
     }
 
@@ -452,19 +453,15 @@ public class RagController {
             for (Map.Entry<Long, String> entry : fileMap.entrySet()) {
                 long fileId = entry.getKey();
                 String fileName = entry.getValue();
-                try {
-                    String presignedUrl = fileService.getPresignedUrl(fileId, 5);
-                    java.net.URL url = new java.net.URL(presignedUrl);
-                    try (InputStream is = url.openStream()) {
-                        ZipEntry zipEntry = new ZipEntry(fileName);
-                        zos.putNextEntry(zipEntry);
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = is.read(buffer)) > 0) {
-                            zos.write(buffer, 0, len);
-                        }
-                        zos.closeEntry();
+                try (InputStream is = fileService.getFileStream(fileId)) {
+                    ZipEntry zipEntry = new ZipEntry(fileName);
+                    zos.putNextEntry(zipEntry);
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = is.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
                     }
+                    zos.closeEntry();
                 } catch (Exception e) {
                     log.error("ZIP打包-文件下载失败: fileId={}, name={}", fileId, fileName, e);
                 }

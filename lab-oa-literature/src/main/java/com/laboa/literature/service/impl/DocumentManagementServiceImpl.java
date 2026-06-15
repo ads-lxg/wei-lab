@@ -109,7 +109,7 @@ public class DocumentManagementServiceImpl implements DocumentManagementService 
         literature.setPermissionLevel(1);
         literature.setViewCount(0);
         literature.setDownloadCount(0);
-        literature.setRagSource(dto.getRagSource() != null ? dto.getRagSource() : 0);
+        literature.setRagSource(dto.getRagSource() != null ? dto.getRagSource() : 1);
         literature.setParseStatus("PENDING");
         literatureMapper.insert(literature);
 
@@ -387,8 +387,8 @@ public class DocumentManagementServiceImpl implements DocumentManagementService 
         // 记录下载日志并增加下载次数
         recordDownload(documentId, userId);
 
-        // 返回MinIO预签名URL
-        return fileService.getPresignedUrl(literature.getFileId());
+        // 返回后端文件流代理URL（MinIO不暴露公网，通过后端流式传输）
+        return "/api/file/" + literature.getFileId() + "/stream?download=true";
     }
 
     // ==================== 批量下载文件ID获取 ====================
@@ -838,6 +838,7 @@ public class DocumentManagementServiceImpl implements DocumentManagementService 
     private LiteratureDetailVO toDetailVO(Literature lit) {
         LiteratureDetailVO vo = new LiteratureDetailVO();
         vo.setId(lit.getId());
+        vo.setFileId(lit.getFileId());
         vo.setFileName(lit.getFileName());
         vo.setTitle(lit.getTitle());
         vo.setAuthors(lit.getAuthors());

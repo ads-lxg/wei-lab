@@ -66,7 +66,7 @@ public class DocumentManagementController {
             @Parameter(description = "发表日期(yyyy-MM-dd)") @RequestParam(value = "publishDate", required = false) String publishDate,
             @Parameter(description = "来源期刊") @RequestParam(value = "sourceJournal", required = false) String sourceJournal,
             @Parameter(description = "DOI号") @RequestParam(value = "doi", required = false) String doi,
-            @Parameter(description = "是否RAG来源(0/1)") @RequestParam(value = "ragSource", defaultValue = "0") Integer ragSource,
+            @Parameter(description = "是否RAG来源(0/1)") @RequestParam(value = "ragSource", defaultValue = "1") Integer ragSource,
             @Parameter(description = "文献文件", required = true) @RequestPart("file") MultipartFile file) {
 
         DocumentUploadDTO dto = new DocumentUploadDTO();
@@ -190,8 +190,20 @@ public class DocumentManagementController {
             @Parameter(description = "文献ID", required = true) @PathVariable("id") Long id) {
 
         Long userId = StpUtil.getLoginIdAsLong();
-        String presignedUrl = documentManagementService.download(id, userId);
-        return Result.success(presignedUrl);
+        String downloadUrl = documentManagementService.download(id, userId);
+        return Result.success(downloadUrl);
+    }
+
+    @Operation(summary = "预览文献", description = "获取文献预览链接（PDF在线预览），不增加下载次数。权限：所有已登录用户")
+    @GetMapping("/{id}/preview")
+    public Result<String> preview(
+            @Parameter(description = "文献ID", required = true) @PathVariable("id") Long id) {
+
+        LiteratureDetailVO detail = documentManagementService.getDetail(id);
+        if (detail == null || detail.getFileId() == null) {
+            throw new BusinessException("文献文件不存在");
+        }
+        return Result.success("/api/file/" + detail.getFileId() + "/stream");
     }
 
     // ==================== 批量下载ZIP ====================
@@ -219,10 +231,8 @@ public class DocumentManagementController {
             for (Long fileId : fileIds) {
                 MinioFile minioFile = fileService.getById(fileId);
                 try {
-                    // 获取MinIO文件的输入流
-                    String presignedUrl = fileService.getPresignedUrl(fileId, 5);
-                    java.net.URL url = new java.net.URL(presignedUrl);
-                    try (InputStream is = url.openStream()) {
+                    // 直接从MinIO读取文件流（后端内部网络可访问）
+                    try (InputStream is = fileService.getFileStream(fileId)) {
                         ZipEntry entry = new ZipEntry(minioFile.getOriginalName());
                         zos.putNextEntry(entry);
                         byte[] buffer = new byte[8192];

@@ -86,6 +86,7 @@ public class SysUserServiceImpl implements SysUserService {
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setEmail(dto.getEmail());
         user.setRealName(dto.getRealName());
+        user.setPhone(dto.getPhone());
         user.setStatus(1);
         sysUserMapper.insert(user);
         // 默认注册为游客，需管理员提升为 student / teacher
@@ -244,7 +245,7 @@ public class SysUserServiceImpl implements SysUserService {
                 .eq(SysUser::getId, userId)
                 .set(SysUser::getAvatar, String.valueOf(minioFile.getId()))
                 .set(SysUser::getUpdateTime, java.time.LocalDateTime.now()));
-        return fileService.getPresignedUrl(minioFile.getId());
+        return "/api/file/" + minioFile.getId() + "/stream";
     }
 
     @Override
@@ -277,7 +278,7 @@ public class SysUserServiceImpl implements SysUserService {
             return null;
         }
         try {
-            return fileService.getPresignedUrl(Long.valueOf(user.getAvatar()));
+            return "/api/file/" + user.getAvatar() + "/stream";
         } catch (Exception e) {
             log.warn("获取头像预签名URL失败: userId={}, avatarId={}", userId, user.getAvatar(), e);
             return null;
@@ -293,13 +294,9 @@ public class SysUserServiceImpl implements SysUserService {
         vo.setEmail(user.getEmail());
         vo.setPhone(user.getPhone());
         vo.setRealName(user.getRealName());
-        // 头像: fileId → 预签名URL
+        // 头像: fileId → 代理URL
         if (user.getAvatar() != null && !user.getAvatar().isBlank()) {
-            try {
-                vo.setAvatar(fileService.getPresignedUrl(Long.valueOf(user.getAvatar())));
-            } catch (Exception e) {
-                vo.setAvatar(null);
-            }
+            vo.setAvatar("/api/file/" + user.getAvatar() + "/stream");
         }
         vo.setStatus(user.getStatus());
         vo.setCreateTime(user.getCreateTime());

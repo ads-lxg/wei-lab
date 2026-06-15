@@ -16,6 +16,9 @@ public class LiteratureDetailVO {
     @Schema(description = "文献ID")
     private Long id;
 
+    @Schema(description = "文件ID（MinIO）")
+    private Long fileId;
+
     @Schema(description = "文件名")
     private String fileName;
 

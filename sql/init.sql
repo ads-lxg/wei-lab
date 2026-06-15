@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS `md_document`;
 DROP TABLE IF EXISTS `literature`;
 DROP TABLE IF EXISTS `rag_folder`;
 DROP TABLE IF EXISTS `download_log`;
+DROP TABLE IF EXISTS `sys_log`;
 DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `chat_message`;
 DROP TABLE IF EXISTS `chat_session`;
@@ -222,7 +223,37 @@ CREATE TABLE `download_log` (
     KEY `idx_user_id` (`user_id`),
     KEY `idx_literature_id` (`literature_id`),
     KEY `idx_download_time` (`download_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下载日志表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下载记录表';
+
+-- =====================================================
+-- 操作日志表
+-- =====================================================
+
+CREATE TABLE `sys_log` (
+    `id` bigint NOT NULL,
+    `user_id` bigint DEFAULT NULL COMMENT '操作用户ID',
+    `username` varchar(50) DEFAULT NULL COMMENT '操作用户名',
+    `real_name` varchar(50) DEFAULT NULL COMMENT '操作人真实姓名',
+    `module` varchar(100) DEFAULT NULL COMMENT '操作模块',
+    `action` varchar(100) DEFAULT NULL COMMENT '操作类型',
+    `target` varchar(500) DEFAULT NULL COMMENT '操作目标',
+    `target_id` bigint DEFAULT NULL COMMENT '目标ID',
+    `request_method` varchar(10) DEFAULT NULL COMMENT '请求方法',
+    `request_url` varchar(500) DEFAULT NULL COMMENT '请求URL',
+    `request_params` text COMMENT '请求参数',
+    `result` varchar(20) DEFAULT NULL COMMENT '操作结果: SUCCESS/FAIL',
+    `error_msg` text COMMENT '错误信息',
+    `cost_time` bigint DEFAULT NULL COMMENT '操作耗时(ms)',
+    `ip` varchar(50) DEFAULT NULL COMMENT '操作IP',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_module` (`module`),
+    KEY `idx_action` (`action`),
+    KEY `idx_result` (`result`),
+    KEY `idx_create_time` (`create_time`),
+    KEY `idx_ip` (`ip`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表';
 
 -- =====================================================
 -- 通知表

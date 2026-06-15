@@ -2,11 +2,11 @@
 import { ref, nextTick, onMounted, onActivated, computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useUserStore } from '@/stores/user'
-import { streamChat, listSessions as fetchSessionList, deleteSession as apiDeleteSession, searchSessions as apiSearchSessions } from '@/api/chat'
+import { streamChat, listSessions as fetchSessionList, deleteSession as apiDeleteSession, searchSessions as apiSearchSessions, batchDownloadCitations } from '@/api/chat'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { markedHighlight } from 'marked-highlight'
-import { Plus, Search, Delete, ChatLineSquare, MagicStick, Edit, User, Promotion, VideoPause, Close } from '@element-plus/icons-vue'
+import { Plus, Search, Delete, ChatLineSquare, MagicStick, Edit, User, Promotion, VideoPause, Close, Download } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import type { LocalMessage } from '@/stores/chat'
@@ -203,6 +203,23 @@ function groupCitations(citations: Citation[]): CitationGroup[] {
     refNumbers: cites.map(c => c.referenceNumber).join(','),
     citations: cites,
   }))
+}
+
+/** 批量下载参考文献 */
+async function handleBatchDownload(citations: Citation[]) {
+  const items = citations
+    .filter(c => c.docId && c.docType)
+    .map(c => ({ docType: c.docType!, docId: c.docId!, fileName: c.fileName || 'unknown' }))
+  if (items.length === 0) {
+    ElMessage.warning('没有可下载的参考文献')
+    return
+  }
+  try {
+    await batchDownloadCitations(items)
+    ElMessage.success('下载完成')
+  } catch {
+    ElMessage.error('下载失败')
+  }
 }
 
 /** 编辑用户消息重新生成 */
@@ -486,7 +503,10 @@ onActivated(async () => {
 
             <!-- Citations (clickable, grouped by same document) -->
             <div v-if="msg.role === 'assistant' && msg.citations && msg.citations.length > 0" class="mt-3 pt-3" style="border-top: 1px solid var(--border-color)" :data-msg-idx="idx">
-              <p class="text-xs font-medium mb-2" style="color: var(--text-muted)">参考文献 ({{ groupCitations(msg.citations).length }})</p>
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-medium" style="color: var(--text-muted)">参考文献 ({{ groupCitations(msg.citations).length }})</p>
+                <el-button size="small" text type="primary" :icon="Download" class="!text-[10px] !p-0" @click="handleBatchDownload(msg.citations)">批量下载</el-button>
+              </div>
               <div
                 v-for="group in groupCitations(msg.citations)" :key="group.key"
                 :data-cite-nums="group.citations.map(c => c.referenceNumber).join(',')"

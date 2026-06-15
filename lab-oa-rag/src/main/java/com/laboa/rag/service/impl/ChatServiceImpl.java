@@ -176,7 +176,17 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public List<ChatMessageVO> getMessages(String sessionId, int page, int size) {
+    public List<ChatMessageVO> getMessages(String sessionId, Long userId, int page, int size) {
+        // 校验会话归属当前用户
+        ChatSession session = chatSessionMapper.selectOne(
+                new LambdaQueryWrapper<ChatSession>()
+                        .eq(ChatSession::getSessionId, sessionId)
+                        .eq(ChatSession::getUserId, userId)
+                        .last("LIMIT 1")
+        );
+        if (session == null) {
+            throw new BusinessException("会话不存在或无权访问");
+        }
         IPage<ChatMessage> pageResult = chatMessageMapper.selectPage(
                 new Page<>(page, size),
                 new LambdaQueryWrapper<ChatMessage>()

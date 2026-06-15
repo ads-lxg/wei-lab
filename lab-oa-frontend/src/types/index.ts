@@ -33,6 +33,7 @@ export interface RegisterDTO {
   username: string
   password: string
   realName?: string
+  phone?: string
 }
 
 export interface LoginVO {
@@ -57,6 +58,36 @@ export interface UserVO {
 export interface UserPageDTO extends PageQuery {
   keyword?: string
   status?: number
+}
+
+// ===== Operation Log Types =====
+
+export interface SysLogVO {
+  id: number
+  userId: number
+  username: string
+  realName: string
+  module: string
+  action: string
+  target: string
+  targetId: number
+  requestMethod: string
+  requestUrl: string
+  result: string
+  costTime: number
+  ip: string
+  createTime: string
+}
+
+export interface SysLogSearchDTO extends PageQuery {
+  operator?: string
+  action?: string
+  target?: string
+  module?: string
+  result?: string
+  ip?: string
+  startTime?: string
+  endTime?: string
 }
 
 // ===== Role Types =====

@@ -43,9 +43,14 @@ export function searchDocuments(params: DocumentSearchDTO): Promise<PageResult<L
 
 // ===== Download =====
 
-/** GET /api/document/{id}/download - returns presigned URL */
+/** GET /api/document/{id}/download - returns proxy URL with download=true */
 export function getDownloadUrl(id: number | string): Promise<string> {
   return get<string>(`/document/${id}/download`)
+}
+
+/** GET /api/document/{id}/preview - returns proxy URL for inline preview */
+export function getPreviewUrl(id: number | string): Promise<string> {
+  return get<string>(`/document/${id}/preview`)
 }
 
 /** POST /api/document/batch-download - triggers file download directly */

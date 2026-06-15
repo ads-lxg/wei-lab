@@ -7,7 +7,7 @@ import type { RegisterDTO } from '@/types'
 const router = useRouter()
 const userStore = useUserStore()
 
-const form = reactive<RegisterDTO>({ email: '', username: '', password: '', realName: '' })
+const form = reactive<RegisterDTO>({ email: '', username: '', password: '', realName: '', phone: '' })
 const loading = ref(false)
 const avatarFile = ref<File | null>(null)
 const avatarPreview = ref<string>('')
@@ -85,6 +85,7 @@ function handleAvatarChange(f: any) {
         <el-form-item><el-input v-model="form.username" placeholder="用户名" size="large" :prefix-icon="User" /></el-form-item>
         <el-form-item><el-input v-model="form.password" placeholder="密码 (不少于6位)" size="large" type="password" :prefix-icon="Lock" show-password /></el-form-item>
         <el-form-item><el-input v-model="form.realName" placeholder="真实姓名 (选填)" size="large" :prefix-icon="UserFilled" /></el-form-item>
+        <el-form-item><el-input v-model="form.phone" placeholder="手机号 (选填)" size="large" :prefix-icon="Iphone" /></el-form-item>
 
         <el-button type="primary" size="large" class="w-full" :loading="loading" @click="handleRegister">
           {{ loading ? '注册中...' : '注 册' }}
