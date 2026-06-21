@@ -20,6 +20,10 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/user/login",
                         "/api/user/register",
+                        "/api/user/captcha",
+                        "/api/user/captcha/check",
+                        "/api/user/security-questions",
+                        "/api/user/security-questions/verify",
                         "/api/config/icon",
                         "/ws/**",
                         "/swagger-ui/**",

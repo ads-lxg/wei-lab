@@ -149,6 +149,43 @@ public class VectorStoreServiceImpl implements VectorStoreService {
         }
     }
 
+    @Override
+    public List<Long> findAllDocIds(String docType) {
+        List<Long> ids = new ArrayList<>();
+        try {
+            Long lastDocId = null;
+            while (true) {
+                final Long searchAfter = lastDocId;
+                var response = elasticsearchClient.search(s -> {
+                    var builder = s.index(INDEX_NAME)
+                            .size(1000)
+                            .query(q -> q.term(t -> t.field("docType").value(docType)))
+                            .source(src -> src.filter(f -> f.includes("docId")))
+                            .sort(so -> so.field(f -> f.field("docId").order(co.elastic.clients.elasticsearch._types.SortOrder.Asc)));
+                    if (searchAfter != null) {
+                        builder.searchAfter(String.valueOf(searchAfter));
+                    }
+                    return builder;
+                }, Map.class);
+
+                var hits = response.hits().hits();
+                if (hits.isEmpty()) break;
+
+                for (var hit : hits) {
+                    Map<String, Object> source = hit.source();
+                    if (source != null && source.get("docId") != null) {
+                        Long did = ((Number) source.get("docId")).longValue();
+                        ids.add(did);
+                        lastDocId = did;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("扫描ES doc_chunks索引失败: docType={}, error={}", docType, e.getMessage(), e);
+        }
+        return ids;
+    }
+
     /**
      * 将 DTO 转为 ES 文档 Map
      */

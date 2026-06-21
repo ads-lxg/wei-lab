@@ -106,7 +106,7 @@ public class DocumentEventListener implements org.springframework.beans.factory.
 
             // ===== 步骤2: 存入 ES resource_text（全文检索，ragSource=0/1 都执行）=====
             long textIndexStart = System.currentTimeMillis();
-            resourceTextService.indexText(event.getDocId(), event.getDocType(), title, fileType, plainText);
+            resourceTextService.indexText(event.getDocId(), event.getDocType(), title, fileType, plainText, event.getFileName());
             long textIndexTime = System.currentTimeMillis() - textIndexStart;
             log.info("[耗时] 步骤2-resource_text入库: {}ms", textIndexTime);
 

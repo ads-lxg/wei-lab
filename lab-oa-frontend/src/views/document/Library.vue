@@ -113,6 +113,8 @@ async function handleBatchDelete() {
     await batchDeleteDocuments({ documentIds: selectedDocs.value.map((d) => d.id) })
     ElMessage.success('删除成功')
     selectedDocs.value = []
+    // 异步刷新目录树数字
+    folderStore.fetchTree()
     if (folderStore.selectedFolderId) loadDocuments(folderStore.selectedFolderId)
   } catch { /* cancelled */ }
 }
@@ -146,6 +148,7 @@ onMounted(async () => {
           <span class="flex items-center gap-2 text-sm flex-1 truncate py-0.5">
             <el-icon :size="14"><FolderOpened v-if="data.children?.length" /><Folder v-else /></el-icon>
             <span>{{ data.folderName }}</span>
+            <span v-if="data.documentCount > 0" class="text-[10px] px-1.5 py-0.5 rounded-full" style="background: var(--bg-hover); color: var(--text-muted)">{{ data.documentCount }}</span>
           </span>
         </template>
       </el-tree>
@@ -199,23 +202,26 @@ onMounted(async () => {
           @selection-change="handleSelectionChange"
           size="small"
           stripe
+          border
           row-key="id"
+          class="resizable-table"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip>
+          <el-table-column prop="fileName" label="文件名" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="text-sm text-primary-500 cursor-pointer hover:underline" @click.stop="viewDetail(row.id)">{{ row.fileName }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="authors" label="作者" width="120" show-overflow-tooltip />
-          <el-table-column prop="keywords" label="关键词" width="120" show-overflow-tooltip />
-          <el-table-column prop="folderName" label="目录" width="100" />
+          <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="authors" label="作者" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="keywords" label="关键词" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="sourceJournal" label="来源期刊" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="folderName" label="目录" min-width="80" />
           <el-table-column prop="fileType" label="类型" width="70" align="center">
             <template #default="{ row }"><span class="badge badge-primary text-[10px]">{{ row.fileType }}</span></template>
           </el-table-column>
           <el-table-column prop="downloadCount" label="下载" width="60" align="center" />
-          <el-table-column prop="createTime" label="上传时间" width="120">
+          <el-table-column prop="createTime" label="上传时间" min-width="100">
             <template #default="{ row }">{{ row.createTime?.substring(0, 10) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="120" fixed="right" align="center">
@@ -268,3 +274,30 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 可拖拽调节列宽 */
+.resizable-table :deep(.el-table__header-wrapper th) {
+  position: relative;
+}
+.resizable-table :deep(.el-table__header-wrapper th::after) {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+}
+.resizable-table :deep(.el-table__header-wrapper th::after:hover) {
+  background: rgba(var(--el-color-primary-rgb, 64, 158, 255), 0.25);
+}
+/* 表格内容自动适应列宽 */
+.resizable-table :deep(.el-table__body-wrapper table) {
+  table-layout: auto !important;
+}
+.resizable-table :deep(.el-table__header-wrapper table) {
+  table-layout: auto !important;
+}
+</style>

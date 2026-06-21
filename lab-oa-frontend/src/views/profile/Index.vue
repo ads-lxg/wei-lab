@@ -3,9 +3,11 @@ import { ref, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { uploadAvatar } from '@/api/auth'
 import { updateUserInfo } from '@/api/user'
+import { useAvatarUrl } from '@/hooks/useAvatar'
 
 const userStore = useUserStore()
 const user = computed(() => userStore.user)
+const profileAvatarSrc = useAvatarUrl(computed(() => userStore.user?.avatar))
 
 const activeTab = ref('info')
 const uploading = ref(false)
@@ -104,7 +106,7 @@ async function handleChangePassword() {
       <div class="flex items-center gap-5">
         <el-badge value="+" class="avatar-badge" :hidden="uploading">
           <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" :on-change="handleAvatarUpload">
-            <el-avatar :size="72" :src="user?.avatar" class="cursor-pointer ring-4 ring-slate-100 dark:ring-zinc-800">
+            <el-avatar :size="72" :src="profileAvatarSrc || user?.avatar" class="cursor-pointer ring-4 ring-slate-100 dark:ring-zinc-800">
               {{ (user?.realName || user?.username || 'U').charAt(0).toUpperCase() }}
             </el-avatar>
           </el-upload>

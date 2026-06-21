@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { listAllPermissions, getRolePermissions, setRolePermissions } from '@/api/permission'
 import { listAllRoles } from '@/api/role'
+import { verifyPassword } from '@/api/auth'
 import type { SysPermission, SysRole } from '@/types'
 
 const loading = ref(false)
@@ -10,6 +11,30 @@ const permissions = ref<SysPermission[]>([])
 const selectedRoleId = ref<number | null>(null)
 const checkedPermIds = ref<number[]>([])
 const selectAll = ref(false)
+
+// 二次密码验证
+const passwordVerified = ref(false)
+const passwordDialogVisible = ref(true)
+const verifyPasswordInput = ref('')
+const verifyLoading = ref(false)
+
+async function handleVerifyPassword() {
+  if (!verifyPasswordInput.value) {
+    ElMessage.warning('请输入密码')
+    return
+  }
+  verifyLoading.value = true
+  try {
+    await verifyPassword(verifyPasswordInput.value)
+    passwordVerified.value = true
+    passwordDialogVisible.value = false
+    ElMessage.success('验证成功')
+  } catch {
+    // error shown by interceptor
+  } finally {
+    verifyLoading.value = false
+  }
+}
 
 async function fetchPermissions() {
   permissions.value = await listAllPermissions()
@@ -51,6 +76,23 @@ onMounted(async () => {
       <h1 class="text-2xl font-bold" style="color: var(--text-primary)">权限管理</h1>
       <p class="text-sm mt-1" style="color: var(--text-muted)">为每个角色分配对应的操作权限</p>
     </div>
+
+    <!-- 二次密码验证对话框 -->
+    <el-dialog v-model="passwordDialogVisible" title="身份验证" width="380px" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false">
+      <p class="text-sm mb-4" style="color: var(--text-muted)">进入权限管理界面需要再次输入密码进行身份验证</p>
+      <el-input v-model="verifyPasswordInput" type="password" placeholder="请输入管理员密码" show-password @keyup.enter="handleVerifyPassword" />
+      <template #footer>
+        <el-button @click="$router.back()">取消</el-button>
+        <el-button type="primary" :loading="verifyLoading" @click="handleVerifyPassword">验证</el-button>
+      </template>
+    </el-dialog>
+
+    <div v-if="!passwordVerified" class="card p-16 text-center">
+      <el-icon :size="48" style="color: var(--text-muted); opacity: 0.3"><Lock /></el-icon>
+      <p class="text-sm mt-4" style="color: var(--text-muted)">请先完成身份验证</p>
+    </div>
+
+    <template v-else>
 
     <div class="card p-5">
       <!-- Role Selector -->
@@ -94,5 +136,6 @@ onMounted(async () => {
         <p class="text-sm mt-3" style="color: var(--text-muted)">请选择一个角色以管理其权限</p>
       </div>
     </div>
+    </template>
   </div>
 </template>

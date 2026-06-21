@@ -26,7 +26,8 @@ public class DocumentChunkDTO {
 
     private String docType;
 
-    private String docId;
+    /** 关联文档ID（对应 literature.id 或 md_document.id），Long类型与ES mapping保持一致 */
+    private Long docId;
 
     /** 检索得分 */
     private double score;

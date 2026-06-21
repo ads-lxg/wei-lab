@@ -7,6 +7,7 @@ export function search(
   type: string = 'all',
   page: number = 1,
   size: number = 10,
+  searchMode: string = 'knn',
 ): Promise<SearchResult> {
-  return get<SearchResult>('/search', { keyword, type, page, size } as unknown as Record<string, unknown>)
+  return get<SearchResult>('/search', { keyword, type, page, size, searchMode } as unknown as Record<string, unknown>)
 }

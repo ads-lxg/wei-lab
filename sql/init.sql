@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `chat_message`;
 DROP TABLE IF EXISTS `chat_session`;
 DROP TABLE IF EXISTS `outbox_event`;
+DROP TABLE IF EXISTS `security_question`;
 
 CREATE TABLE `sys_config` (
     `id` bigint NOT NULL,
@@ -54,9 +55,10 @@ CREATE TABLE `sys_user` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_username` (`username`),
-    UNIQUE KEY `uk_email` (`email`),
+    UNIQUE KEY `uk_email` (`email`, `deleted`),
     KEY `idx_status` (`status`),
     KEY `idx_deleted` (`deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统用户表';
@@ -69,6 +71,7 @@ CREATE TABLE `sys_role` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_role_code` (`role_code`),
     KEY `idx_deleted` (`deleted`)
@@ -86,11 +89,24 @@ CREATE TABLE `sys_permission` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_perm_code` (`perm_code`),
     KEY `idx_parent_id` (`parent_id`),
     KEY `idx_deleted` (`deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统权限表';
+
+CREATE TABLE `security_question` (
+    `id` bigint NOT NULL,
+    `question` varchar(512) NOT NULL COMMENT '安全问题',
+    `answer` varchar(256) NOT NULL COMMENT '答案',
+    `status` tinyint DEFAULT 1 COMMENT '状态: 1启用 0禁用',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='安全问题题库表';
 
 CREATE TABLE `user_role` (
     `user_id` bigint NOT NULL,
@@ -122,7 +138,9 @@ CREATE TABLE `minio_file` (
     `uploader_id` bigint DEFAULT NULL,
     `status` tinyint DEFAULT 1 COMMENT '1:临时 2:正式',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     KEY `idx_uploader_id` (`uploader_id`),
     KEY `idx_md5` (`md5`),
@@ -145,6 +163,7 @@ CREATE TABLE `md_document` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     KEY `idx_title` (`title`),
     KEY `idx_author_id` (`author_id`),
@@ -168,6 +187,7 @@ CREATE TABLE `rag_folder` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     KEY `idx_parent_id` (`parent_id`),
     KEY `idx_deleted` (`deleted`)
@@ -199,6 +219,7 @@ CREATE TABLE `literature` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     KEY `idx_title` (`title`),
     KEY `idx_authors` (`authors`(255)),
@@ -207,6 +228,8 @@ CREATE TABLE `literature` (
     KEY `idx_uploader_id` (`uploader_id`),
     KEY `idx_folder_id` (`folder_id`),
     KEY `idx_deleted` (`deleted`),
+    KEY `idx_doi` (`doi`),
+    KEY `idx_file_name` (`file_name`(255)),
     FOREIGN KEY (`file_id`) REFERENCES `minio_file`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文献表';
 
@@ -268,7 +291,9 @@ CREATE TABLE `notification` (
     `is_read` tinyint DEFAULT 0 COMMENT '0:未读 1:已读',
     `related_id` bigint DEFAULT NULL COMMENT '关联业务ID',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_user_read` (`user_id`, `is_read`),
@@ -285,6 +310,7 @@ CREATE TABLE `chat_session` (
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted` tinyint DEFAULT 0 COMMENT '0:未删除 1:已删除',
+    `deleted_time` datetime DEFAULT NULL COMMENT '逻辑删除时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_id` (`session_id`),
     KEY `idx_user_id` (`user_id`),
@@ -397,6 +423,22 @@ INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 -- guest：仪表盘、文献查看、搜索（不可访问RAG问答、对话历史、知识储备）
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (4,1),(4,7),(4,12),(4,16),(4,17);
+
+-- =====================================================
+-- 安全问题题库初始数据
+-- =====================================================
+
+INSERT INTO `security_question` (`id`, `question`, `answer`) VALUES
+(1, '你最喜欢的颜色是什么？', '蓝色'),
+(2, '你第一只宠物的名字是什么？', '小黄'),
+(3, '你出生的城市是哪里？', '北京'),
+(4, '你小时候的绰号是什么？', '小胖'),
+(5, '你最喜欢的食物是什么？', '火锅'),
+(6, '你的第一个老师姓什么？', '李'),
+(7, '你的母亲的姓名是什么？', '张三'),
+(8, '你的爱好是什么？', '阅读'),
+(9, '你最喜欢的电影是什么？', '肖申克的救赎'),
+(10, '你最喜欢的运动是什么？', '篮球');
 
 -- =====================================================
 -- 系统配置初始数据

@@ -114,6 +114,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/SiteConfig.vue'),
         meta: { title: '站点配置', icon: 'Setting', perm: 'system:config', roles: ['ADMIN'] },
       },
+      {
+        path: 'admin/security-questions',
+        name: 'AdminSecurityQuestions',
+        component: () => import('@/views/admin/SecurityQuestions.vue'),
+        meta: { title: '题库管理', icon: 'QuestionFilled', perm: 'user:list', roles: ['ADMIN'] },
+      },
+      {
+        path: 'admin/data-cleanup',
+        name: 'AdminDataCleanup',
+        component: () => import('@/views/admin/DataCleanup.vue'),
+        meta: { title: '数据清理', icon: 'DeleteFilled', roles: ['ADMIN'] },
+      },
       // ===== Other Routes =====
       {
         path: 'profile',

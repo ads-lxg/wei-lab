@@ -32,6 +32,13 @@ public class MybatisPlusConfig {
             @Override
             public void updateFill(MetaObject metaObject) {
                 this.strictUpdateFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
+                // 软删除时自动记录删除时间，用于定时清理任务判断
+                if (metaObject.hasGetter("deleted") && metaObject.hasGetter("deletedTime")) {
+                    Object deletedVal = metaObject.getValue("deleted");
+                    if (deletedVal != null && "1".equals(String.valueOf(deletedVal))) {
+                        this.setFieldValByName("deletedTime", LocalDateTime.now(), metaObject);
+                    }
+                }
             }
         };
     }

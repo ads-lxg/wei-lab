@@ -24,4 +24,7 @@ public class DocumentSearchDTO {
 
     @Schema(description = "排序方向: asc / desc", example = "desc")
     private String sortOrder = "desc";
+
+    @Schema(description = "搜索模式: bm25=关键词精确匹配优先, knn=语义检索优先(支持中英跨语言), hybrid=均衡混合", example = "hybrid")
+    private String searchMode = "hybrid";
 }

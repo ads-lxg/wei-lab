@@ -24,4 +24,9 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             "INNER JOIN user_role ur ON rp.role_id = ur.role_id " +
             "WHERE ur.user_id = #{userId} AND p.deleted = 0")
     List<String> selectPermissionCodesByUserId(Long userId);
+
+    @Select("SELECT COUNT(DISTINCT ur.user_id) FROM user_role ur " +
+            "INNER JOIN sys_user u ON ur.user_id = u.id " +
+            "WHERE ur.role_id = #{roleId} AND u.deleted = 0")
+    int countUsersByRoleId(Long roleId);
 }

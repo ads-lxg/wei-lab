@@ -4,8 +4,15 @@ import { getDocPage, createOnlineDoc, createDoc, deleteDoc, getDocById, searchDo
 import type { MdDocument } from '@/api/doc'
 import type { PageResult } from '@/types'
 import { marked } from 'marked'
+import { escapeHtml, isDangerousUrl } from '@/utils/sanitize'
 import { Upload, Plus, Search, Document, UploadFilled, Download } from '@element-plus/icons-vue'
 
+const renderer = new marked.Renderer()
+renderer.link = ({ href, title, text }) => {
+  const safeHref = isDangerousUrl(href) ? '#' : href
+  return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer"${title ? ` title="${escapeHtml(title)}"` : ''}>${text}</a>`
+}
+marked.use({ renderer })
 marked.setOptions({ breaks: true, gfm: true })
 
 const loading = ref(false)
@@ -99,10 +106,17 @@ async function handleDelete(doc: MdDocument) {
 async function handleView(doc: MdDocument) {
   try {
     const res = await getDocById(doc.id)
+    const ft = res.doc?.fileType || doc.fileType || 'md'
+    viewFileType.value = ft
     viewTitle.value = res.doc?.title || doc.title
-    viewContent.value = res.content || ''
-    viewFileType.value = res.doc?.fileType || doc.fileType || 'md'
     viewUrl.value = res.url || ''
+
+    // MD/TXT 文本文件用 content 渲染，其他格式用代理URL预览
+    if (ft === 'md' || ft === 'txt') {
+      viewContent.value = res.content || ''
+    } else {
+      viewContent.value = ''
+    }
     viewVisible.value = true
   } catch {
     ElMessage.error('加载文档失败')
@@ -116,23 +130,23 @@ function renderMarkdown(text: string): string {
 
 /** 下载文档（查看弹窗内） */
 function handleDownload() {
-  if (!viewContent.value && !viewUrl.value) {
-    ElMessage.warning('无下载内容')
-    return
-  }
-  // 优先用 content 创建 Blob 下载，避免 presigned URL 在浏览器中乱码
+  // 文本文件用 content 创建 Blob 下载
   if (viewContent.value) {
     const ext = viewFileType.value === 'txt' ? 'txt' : 'md'
-    const mimeType = viewFileType.value === 'txt' ? 'text/plain' : 'text/markdown'
-    const blob = new Blob([viewContent.value], { type: `${mimeType};charset=utf-8` })
+    const mimeType = viewFileType.value === 'txt' ? 'text/plain;charset=utf-8' : 'text/markdown;charset=utf-8'
+    const blob = new Blob([viewContent.value], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `${viewTitle.value || 'document'}.${ext}`
     a.click()
     URL.revokeObjectURL(url)
+  } else if (viewUrl.value) {
+    // 非文本文件走流式代理下载
+    const downloadUrl = viewUrl.value + '?download=true'
+    window.open(downloadUrl, '_blank')
   } else {
-    window.open(viewUrl.value, '_blank')
+    ElMessage.warning('无下载内容')
   }
 }
 
@@ -140,18 +154,25 @@ function handleDownload() {
 async function handleDownloadDoc(doc: MdDocument) {
   try {
     const res = await getDocById(doc.id)
-    if (res?.content) {
-      const ext = res.doc?.fileType === 'txt' ? 'txt' : 'md'
-      const mimeType = ext === 'txt' ? 'text/plain' : 'text/markdown'
-      const blob = new Blob([res.content], { type: `${mimeType};charset=utf-8` })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${res.doc?.title || doc.title || 'document'}.${ext}`
-      a.click()
-      URL.revokeObjectURL(url)
-    } else if (res?.url) {
-      window.open(res.url, '_blank')
+    const ft = res.doc?.fileType || doc.fileType || 'md'
+    if (ft === 'md' || ft === 'txt') {
+      // 文本文件通过 content 创建 Blob 下载
+      if (res?.content) {
+        const ext = ft === 'txt' ? 'txt' : 'md'
+        const mimeType = ft === 'txt' ? 'text/plain;charset=utf-8' : 'text/markdown;charset=utf-8'
+        const blob = new Blob([res.content], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${res.doc?.title || doc.title || 'document'}.${ext}`
+        a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+    }
+    // 非文本文件或无 content 场景，走流式代理下载
+    if (res?.url) {
+      window.open(res.url + '?download=true', '_blank')
     } else {
       ElMessage.warning('无下载内容')
     }
@@ -228,7 +249,7 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column prop="fileType" label="类型" width="80" align="center">
           <template #default="{ row }">
-            <span class="badge" :class="row.fileType === 'md' ? 'badge-primary' : 'badge-warning'">{{ row.fileType }}</span>
+            <span class="badge" :class="(row.fileType === 'md' || !row.fileType) ? 'badge-primary' : 'badge-warning'">{{ row.fileType || 'md' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="140" align="center">
@@ -299,7 +320,11 @@ onMounted(fetchData)
         <el-button size="small" type="primary" :icon="Download" @click="handleDownload">下载文件</el-button>
       </div>
       <div v-if="viewFileType === 'md'" class="markdown-viewer prose max-w-none p-4 rounded-lg" style="background: var(--bg-hover)" v-html="renderMarkdown(viewContent)" />
-      <pre v-else class="p-4 rounded-lg text-sm whitespace-pre-wrap" style="background: var(--bg-hover); color: var(--text-primary)">{{ viewContent }}</pre>
+      <pre v-else-if="viewFileType === 'txt'" class="p-4 rounded-lg text-sm whitespace-pre-wrap" style="background: var(--bg-hover); color: var(--text-primary)">{{ viewContent }}</pre>
+      <div v-else class="text-center py-8" style="color: var(--text-muted)">
+        <p class="text-sm">非文本文件（{{ viewFileType }}）</p>
+        <p class="text-xs mt-1">请点击上方「下载文件」按钮下载后查看</p>
+      </div>
     </el-dialog>
   </div>
 </template>

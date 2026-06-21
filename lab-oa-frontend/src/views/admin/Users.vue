@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getUserPage, updateUserStatus, assignUserRoles, deleteUser, updateUserInfo } from '@/api/user'
 import { listAllRoles } from '@/api/role'
+import { batchFetchAvatarUrls } from '@/hooks/useAvatar'
+import { useUserStore } from '@/stores/user'
 import type { UserVO, SysRole } from '@/types'
 import type { PageResult } from '@/types'
+
+const userStore = useUserStore()
+const currentUserId = userStore.user?.id
 
 const loading = ref(false)
 const users = ref<UserVO[]>([])
@@ -20,6 +25,16 @@ const selectedRoleIds = ref<number[]>([])
 
 // Stats
 const stats = ref({ total: 0, active: 0, disabled: 0, admin: 0 })
+// 头像 blob URL 缓存：原始路径 → blobUrl
+const avatarUrlMap = ref<Map<string, string>>(new Map())
+
+// 释放所有缓存的 blob URL
+function revokeAvatarBlobs() {
+  avatarUrlMap.value.forEach((url) => URL.revokeObjectURL(url))
+  avatarUrlMap.value.clear()
+}
+
+onUnmounted(() => revokeAvatarBlobs())
 
 async function fetchData() {
   loading.value = true
@@ -32,6 +47,12 @@ async function fetchData() {
     stats.value.active = users.value.filter(u => u.status === 1).length
     stats.value.disabled = users.value.filter(u => u.status === 0).length
     stats.value.admin = users.value.filter(u => u.roles?.includes('ADMIN')).length
+    // 批量预取头像 blob URL
+    revokeAvatarBlobs()
+    const avatarPaths = result.records.map(u => u.avatar).filter(Boolean) as string[]
+    if (avatarPaths.length > 0) {
+      avatarUrlMap.value = await batchFetchAvatarUrls(avatarPaths)
+    }
   } finally {
     loading.value = false
   }
@@ -162,7 +183,7 @@ function roleTagType(role: string): string {
         <el-table-column label="用户" min-width="200">
           <template #default="{ row }">
             <div class="flex items-center gap-2.5">
-              <el-avatar :size="32" :src="row.avatar">{{ (row.realName || row.username || 'U').charAt(0).toUpperCase() }}</el-avatar>
+              <el-avatar :size="32" :src="(row.avatar && avatarUrlMap.get(row.avatar)) || row.avatar">{{ (row.realName || row.username || 'U').charAt(0).toUpperCase() }}</el-avatar>
               <div>
                 <p class="text-sm font-medium" style="color: var(--text-primary)">{{ row.realName || row.username }}</p>
                 <p class="text-xs" style="color: var(--text-muted)">@{{ row.username }}</p>
@@ -197,13 +218,14 @@ function roleTagType(role: string): string {
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="openRoleDialog(row)">角色</el-button>
+            <el-button size="small" type="primary" link @click="openRoleDialog(row)" :disabled="row.id === currentUserId" :title="row.id === currentUserId ? '不允许为自己设置角色' : ''">角色</el-button>
             <el-button size="small" link @click="openEditDialog(row)">编辑</el-button>
-            <el-popconfirm title="确认删除此用户？" @confirm="handleDelete(row)">
+            <el-popconfirm v-if="row.id !== currentUserId" title="确认删除此用户？" @confirm="handleDelete(row)">
               <template #reference>
                 <el-button size="small" type="danger" link>删除</el-button>
               </template>
             </el-popconfirm>
+            <el-button v-else size="small" type="danger" link disabled title="不允许删除自己的账号">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

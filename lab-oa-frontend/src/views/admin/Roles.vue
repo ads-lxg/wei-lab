@@ -111,7 +111,7 @@ onMounted(fetchData)
             <el-button size="small" link @click="openEdit(row)">编辑</el-button>
             <el-popconfirm title="确认删除此角色？" @confirm="handleDelete(row)">
               <template #reference>
-                <el-button size="small" type="danger" link>删除</el-button>
+                <el-button size="small" type="danger" link :disabled="row.roleCode.toLowerCase() === 'admin'" :title="row.roleCode.toLowerCase() === 'admin' ? '管理员角色不可删除' : ''">删除</el-button>
               </template>
             </el-popconfirm>
           </template>

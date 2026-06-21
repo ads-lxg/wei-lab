@@ -31,4 +31,10 @@ public interface VectorStoreService {
      * @param docId 文档ID
      */
     void deleteByDocId(String docType, Long docId);
+
+    /**
+     * 扫描 doc_chunks 索引中指定 docType 的所有 docId
+     * 用于补偿清理：检查 MySQL 中是否仍存在对应记录
+     */
+    List<Long> findAllDocIds(String docType);
 }

@@ -36,4 +36,10 @@ public interface LiteratureMapper extends BaseMapper<Literature> {
      */
     @Delete("DELETE FROM literature WHERE id = #{id}")
     int physicalDeleteById(@Param("id") Long id);
+
+    /**
+     * 查询所有已逻辑删除的文献ID - 用于搜索时排除
+     */
+    @Select("SELECT id FROM literature WHERE deleted = 1")
+    java.util.List<Long> selectDeletedIds();
 }

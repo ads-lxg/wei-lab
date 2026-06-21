@@ -47,4 +47,7 @@ public class RagFolder {
     /** 逻辑删除：0=正常，1=已删除 */
     @TableLogic
     private Integer deleted;
+
+    /** 逻辑删除时间（定时清理任务根据此字段判断） */
+    private LocalDateTime deletedTime;
 }

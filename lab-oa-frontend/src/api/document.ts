@@ -1,4 +1,6 @@
 import { get, post, put, del, postForm } from './request'
+import axios from 'axios'
+import { getToken } from '@/utils/token'
 import type {
   PageResult,
   LiteratureListItemVO,
@@ -39,6 +41,17 @@ export function getDocumentDetail(id: number | string): Promise<LiteratureDetail
 /** GET /api/document/search */
 export function searchDocuments(params: DocumentSearchDTO): Promise<PageResult<LiteratureListItemVO>> {
   return get<PageResult<LiteratureListItemVO>>('/document/search', params as unknown as Record<string, unknown>)
+}
+
+/** GET /api/document/dashboard-stats */
+export function getDashboardStats(): Promise<{
+  totalDocuments: number
+  todayNewDocuments: number
+  totalDownloads: number
+  hotDocuments: LiteratureListItemVO[]
+  recentUploads: LiteratureListItemVO[]
+}> {
+  return get('/document/dashboard-stats')
 }
 
 // ===== Download =====
@@ -107,4 +120,27 @@ export function recoverDocument(id: number | string): Promise<void> {
 /** PUT /api/document/batch-recover */
 export function batchRecoverDocuments(data: DocumentBatchRecoverDTO): Promise<void> {
   return put<void>('/document/batch-recover', data)
+}
+
+// ===== DOI 批量解析 =====
+
+/** POST /api/document/batch-parse-doi — 上传DOI Excel，下载填充好的批量上传Excel */
+export async function batchParseDoi(file: File): Promise<void> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const token = getToken()
+  const resp = await axios.post('/api/document/batch-parse-doi', fd, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(token ? { Authorization: token } : {}),
+    },
+    responseType: 'blob',
+    timeout: 120000,
+  })
+  const url = window.URL.createObjectURL(new Blob([resp.data]))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'doi_import_result.xlsx'
+  a.click()
+  window.URL.revokeObjectURL(url)
 }

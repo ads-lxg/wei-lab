@@ -39,4 +39,7 @@ public interface SysUserService {
 
     /** 获取头像 URL（用户无头像时返回 null） */
     String getAvatarUrl(Long userId);
+
+    /** 验证用户密码（用于敏感操作的二次验证） */
+    boolean verifyPassword(Long userId, String password);
 }

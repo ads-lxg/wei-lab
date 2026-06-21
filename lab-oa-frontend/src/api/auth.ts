@@ -29,3 +29,13 @@ export function uploadAvatar(file: File): Promise<string> {
 export function deleteAvatar(): Promise<void> {
   return del<void>('/user/avatar')
 }
+
+/** GET /api/user/captcha/check - 检查是否需要验证码 */
+export function checkCaptcha(username: string): Promise<{ needCaptcha: boolean; captchaId?: string; targetX?: number }> {
+  return get('/user/captcha/check', { username })
+}
+
+/** POST /api/user/verify-password - 验证当前用户密码（二次验证） */
+export function verifyPassword(password: string): Promise<void> {
+  return post<void>('/user/verify-password', { password })
+}

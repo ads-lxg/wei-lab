@@ -9,6 +9,7 @@ import com.laboa.file.entity.MinioFile;
 import com.laboa.file.service.FileService;
 import com.laboa.literature.dto.*;
 import com.laboa.literature.service.DocumentManagementService;
+import com.laboa.literature.service.DoiParseService;
 import com.laboa.literature.vo.BatchUploadResultVO;
 import com.laboa.literature.vo.LiteratureDetailVO;
 import com.laboa.literature.vo.LiteratureListItemVO;
@@ -27,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -51,6 +53,7 @@ public class DocumentManagementController {
     private final FileService fileService;
     private final NotificationService notificationService;
     private final SysUserMapper sysUserMapper;
+    private final DoiParseService doiParseService;
 
     // ==================== 上传文献 ====================
 
@@ -106,7 +109,7 @@ public class DocumentManagementController {
 
     // ==================== 批量上传 ====================
 
-    @Operation(summary = "批量上传文献", description = "通过Excel+文件批量上传文献。Excel包含：文件名、标题、作者、关键词、摘要、发表时间、来源期刊、RAG来源(0/1)。权限：ADMIN")
+    @Operation(summary = "批量上传文献", description = "通过Excel+文件批量上传文献。Excel包含：文件名、标题、作者、关键词、摘要、发表时间、来源期刊、DOI、RAG来源(0/1)。权限：ADMIN")
     @SaCheckPermission("literature:batchUpload")
     @PostMapping("/batch-upload")
     public Result<BatchUploadResultVO> batchUpload(
@@ -287,6 +290,15 @@ public class DocumentManagementController {
         return Result.success(result);
     }
 
+    // ==================== 仪表盘统计 ====================
+
+    @Operation(summary = "仪表盘统计", description = "获取文献库仪表盘统计数据：总文献数、今日新增、热门文献、最近上传。仅统计未删除且不在回收站的文献")
+    @SaCheckPermission("literature:view")
+    @GetMapping("/dashboard-stats")
+    public Result<Map<String, Object>> dashboardStats() {
+        return Result.success(documentManagementService.getDashboardStats());
+    }
+
     // ==================== 回收站 ====================
 
     @Operation(summary = "回收站列表", description = "分页查询回收站中的文献。权限：ADMIN")
@@ -366,6 +378,104 @@ public class DocumentManagementController {
         return Result.success(statusMap);
     }
 
+    // ==================== DOI 批量解析 ====================
+
+    @Operation(summary = "DOI批量解析", description = "上传仅含DOI列的Excel，通过Crossref API解析出文献元数据，返回可直接用于批量上传的Excel。权限：ADMIN/TEACHER/STUDENT")
+    @SaCheckPermission("literature:upload")
+    @PostMapping("/batch-parse-doi")
+    public void batchParseDoi(
+            @Parameter(description = "包含DOI号的Excel文件（第一列为DOI号）", required = true)
+            @RequestPart("file") MultipartFile file,
+            HttpServletResponse response) {
+
+        // 1. 读取Excel中的DOI列表
+        List<String> dois = new java.util.ArrayList<>();
+        try (InputStream is = file.getInputStream();
+             org.apache.poi.ss.usermodel.Workbook workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(is)) {
+
+            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                org.apache.poi.ss.usermodel.Row row = sheet.getRow(i);
+                if (row == null) continue;
+                String doi = getCellString(row.getCell(0));
+                if (doi != null && !doi.isBlank()) {
+                    dois.add(doi.trim());
+                }
+            }
+        } catch (Exception e) {
+            log.error("DOI Excel读取失败", e);
+            throw new BusinessException("Excel读取失败: " + e.getMessage());
+        }
+
+        if (dois.isEmpty()) {
+            throw new BusinessException("未在Excel中找到DOI号");
+        }
+
+        // 2. 批量查询DOI元数据
+        List<DoiParseService.DoiInfo> results = doiParseService.parseBatch(dois);
+
+        // 3. 生成输出Excel
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=doi_import_result.xlsx");
+
+        try (org.apache.poi.xssf.usermodel.XSSFWorkbook outWorkbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+            org.apache.poi.ss.usermodel.Sheet outSheet = outWorkbook.createSheet("批量导入");
+
+            // 表头
+            org.apache.poi.ss.usermodel.Row header = outSheet.createRow(0);
+            String[] headers = {"文件名", "标题", "作者", "关键词", "摘要", "发表时间", "来源期刊", "DOI", "RAG来源"};
+            org.apache.poi.ss.usermodel.CellStyle headerStyle = outWorkbook.createCellStyle();
+            org.apache.poi.ss.usermodel.Font headerFont = outWorkbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            for (int i = 0; i < headers.length; i++) {
+                org.apache.poi.ss.usermodel.Cell cell = header.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // 数据行
+            int rowIdx = 1;
+            for (DoiParseService.DoiInfo info : results) {
+                if (!info.success()) continue;
+
+                org.apache.poi.ss.usermodel.Row row = outSheet.createRow(rowIdx++);
+                // 文件名 = 标题.pdf
+                String title = info.title();
+                String fileName = title.isBlank() ? "unknown.pdf" : title.replaceAll("[\\\\/:*?\"<>|]", "_") + ".pdf";
+                row.createCell(0).setCellValue(fileName);
+                row.createCell(1).setCellValue(title);
+                row.createCell(2).setCellValue(info.authors());
+                row.createCell(3).setCellValue(info.keywords());
+                row.createCell(4).setCellValue(info.abstractText());
+                row.createCell(5).setCellValue(info.publishDate());
+                row.createCell(6).setCellValue(info.sourceJournal());
+                row.createCell(7).setCellValue(info.doi());
+                row.createCell(8).setCellValue(1); // 默认RAG来源=1
+            }
+
+            // 未解析成功的DOI追加到末尾，仅填写DOI列
+            for (DoiParseService.DoiInfo info : results) {
+                if (info.success()) continue;
+                String doi = info.doi();
+                if (doi == null || doi.isBlank()) continue;
+                org.apache.poi.ss.usermodel.Row row = outSheet.createRow(rowIdx++);
+                row.createCell(7).setCellValue(doi);
+            }
+
+            // 调整列宽
+            for (int i = 0; i < headers.length; i++) {
+                outSheet.autoSizeColumn(i);
+            }
+
+            outWorkbook.write(response.getOutputStream());
+            response.getOutputStream().flush();
+        } catch (Exception e) {
+            log.error("DOI解析Excel生成失败", e);
+            throw new BusinessException("Excel生成失败: " + e.getMessage());
+        }
+    }
+
     // ==================== 通知辅助方法 ====================
 
     /**
@@ -393,5 +503,23 @@ public class DocumentManagementController {
             return user.getRealName();
         }
         return user != null ? user.getUsername() : "未知用户";
+    }
+
+    /** Excel 单元格转字符串 */
+    private String getCellString(org.apache.poi.ss.usermodel.Cell cell) {
+        if (cell == null) return null;
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                try {
+                    yield cell.getStringCellValue();
+                } catch (Exception e) {
+                    yield String.valueOf(cell.getNumericCellValue());
+                }
+            }
+            default -> null;
+        };
     }
 }

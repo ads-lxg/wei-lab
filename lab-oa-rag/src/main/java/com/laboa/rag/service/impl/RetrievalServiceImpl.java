@@ -5,6 +5,13 @@ import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.laboa.common.constant.MqConstants;
+import com.laboa.doc.entity.MdDocument;
+import com.laboa.doc.mapper.MdDocumentMapper;
+import com.laboa.literature.entity.Literature;
+import com.laboa.literature.entity.RagFolder;
+import com.laboa.literature.mapper.LiteratureMapper;
+import com.laboa.literature.mapper.RagFolderMapper;
 import com.laboa.rag.dto.DocumentChunkDTO;
 import com.laboa.rag.service.EmbeddingService;
 import com.laboa.rag.service.RetrievalService;
@@ -15,8 +22,12 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 检索服务实现 - ES k-NN 向量检索 + BM25 混合检索
@@ -28,6 +39,9 @@ public class RetrievalServiceImpl implements RetrievalService {
 
     private final ElasticsearchClient elasticsearchClient;
     private final EmbeddingService embeddingService;
+    private final LiteratureMapper literatureMapper;
+    private final MdDocumentMapper mdDocumentMapper;
+    private final RagFolderMapper ragFolderMapper;
 
     private static final String INDEX_NAME = "doc_chunks";
 
@@ -37,12 +51,15 @@ public class RetrievalServiceImpl implements RetrievalService {
             return Collections.emptyList();
         }
         float[] queryVector = embeddingService.embed(query);
+        List<DocumentChunkDTO> candidates;
         if (queryVector.length == 0) {
             // Embedding 不可用 → 降级为 BM25 文本检索
             log.info("Embedding API 不可用，降级为 BM25 文本检索");
-            return bm25Search(query, topK);
+            candidates = bm25Search(query, topK * 3);
+        } else {
+            candidates = knnSearch(queryVector, topK * 3);
         }
-        return knnSearch(queryVector, topK);
+        return filterValidChunks(candidates, topK);
     }
 
     @Override
@@ -52,9 +69,11 @@ public class RetrievalServiceImpl implements RetrievalService {
         }
 
         float[] queryVector = embeddingService.embed(query);
+        List<DocumentChunkDTO> candidates;
         if (queryVector.length == 0) {
             log.info("Embedding API 不可用，降级为 BM25 文本检索 (doc_chunks)");
-            return bm25Search(query, topK);
+            candidates = bm25Search(query, topK * 3);
+            return filterValidChunks(candidates, topK);
         }
 
         // 使用 RRF (Reciprocal Rank Fusion) 混合检索策略
@@ -62,7 +81,7 @@ public class RetrievalServiceImpl implements RetrievalService {
         try {
             SearchResponse<Map> response = elasticsearchClient.search(s -> s
                     .index(INDEX_NAME)
-                    .size(topK)
+                    .size(topK * 3)
                     .query(q -> q
                             .bool(b -> b
                                     .should(knnQuery(queryVector))
@@ -78,22 +97,23 @@ public class RetrievalServiceImpl implements RetrievalService {
                             )
                     ), Map.class);
 
-            return parseHits(response);
+            candidates = parseHits(response);
         } catch (ElasticsearchException e) {
             if (e.getMessage() != null && e.getMessage().contains("index_not_found_exception")) {
                 log.info("ES索引 '{}' 尚未创建，无RAG数据可检索", INDEX_NAME);
                 return Collections.emptyList();
             }
             log.warn("混合检索失败，降级为纯BM25检索: {}", e.getMessage());
-            return bm25Search(query, topK);
+            candidates = bm25Search(query, topK * 3);
         } catch (IOException e) {
             log.warn("混合检索IO异常，降级为纯BM25检索: {}", e.getMessage());
-            return bm25Search(query, topK);
+            candidates = bm25Search(query, topK * 3);
         } catch (Exception e) {
             // RRF 可能不被当前 ES 版本支持，降级为手动 RRF
             log.warn("RRF检索异常，降级为手动RRF融合: {}", e.getMessage());
-            return manualRRF(query, queryVector, topK);
+            candidates = manualRRF(query, queryVector, topK * 3);
         }
+        return filterValidChunks(candidates, topK);
     }
 
     /**
@@ -186,6 +206,7 @@ public class RetrievalServiceImpl implements RetrievalService {
 
     /**
      * 构建 BM25 关键词查询 - 多字段匹配，提高召回率
+     * minimumShouldMatch 设为 30%，跨语言场景下降低精确匹配门槛
      */
     private Query bm25Query(String query) {
         return Query.of(q -> q
@@ -193,7 +214,7 @@ public class RetrievalServiceImpl implements RetrievalService {
                         .fields("content", "fileName^2")
                         .query(query)
                         .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
-                        .minimumShouldMatch("70%")
+                        .minimumShouldMatch("30%")
                 )
         );
     }
@@ -239,10 +260,80 @@ public class RetrievalServiceImpl implements RetrievalService {
             dto.setSourcePath(String.valueOf(source.getOrDefault("sourcePath", "")));
             dto.setChunkIndex(source.get("chunkIndex") != null ? ((Number) source.get("chunkIndex")).intValue() : 0);
             dto.setDocType(String.valueOf(source.getOrDefault("docType", "")));
-            dto.setDocId(source.get("docId") != null ? String.valueOf(source.get("docId")) : null);
+            Object docIdVal = source.get("docId");
+            if (docIdVal instanceof Number) {
+                dto.setDocId(((Number) docIdVal).longValue());
+            } else if (docIdVal != null) {
+                try {
+                    dto.setDocId(Long.parseLong(String.valueOf(docIdVal)));
+                } catch (NumberFormatException ignored) {
+                }
+            }
             dto.setScore(hit.score() != null ? hit.score() : 0.0);
             results.add(dto);
         }
         return results;
+    }
+
+    /**
+     * 过滤掉已删除/回收站中的文档 chunk
+     * 按 docType 回查 MySQL，只保留存在且未删除的文档
+     * 对于文献，还需校验所属目录存在（排除目录已删除的孤儿文献）
+     */
+    private List<DocumentChunkDTO> filterValidChunks(List<DocumentChunkDTO> candidates, int topK) {
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 严格过滤：docType 和 docId 都不能为空，否则无法校验有效性，直接丢弃
+        Map<String, Set<Long>> docIdGroups = candidates.stream()
+                .filter(c -> c.getDocType() != null && !c.getDocType().isEmpty()
+                        && c.getDocId() != null)
+                .collect(Collectors.groupingBy(
+                        DocumentChunkDTO::getDocType,
+                        Collectors.mapping(DocumentChunkDTO::getDocId, Collectors.toSet())
+                ));
+
+        // 批量查询有效的 docId（未删除 + 文献需校验目录存在）
+        Set<String> validKeys = new HashSet<>();
+        for (Map.Entry<String, Set<Long>> entry : docIdGroups.entrySet()) {
+            String docType = entry.getKey();
+            Set<Long> docIds = entry.getValue();
+            if (docIds.isEmpty()) continue;
+
+            if (MqConstants.DOC_TYPE_LITERATURE.equals(docType)) {
+                // 查询未删除的文献
+                List<Literature> lits = literatureMapper.selectBatchIds(docIds);
+                // 收集有效文献的 folderId，用于校验目录是否存在
+                Set<Long> folderIds = lits.stream()
+                        .map(Literature::getFolderId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+                Set<Long> validFolderIds = folderIds.isEmpty()
+                        ? Collections.emptySet()
+                        : new HashSet<>(ragFolderMapper.selectBatchIds(folderIds)
+                                .stream()
+                                .map(RagFolder::getId)
+                                .collect(Collectors.toSet()));
+                // 只保留：未删除 + folderId 不为空 + 目录存在且未删除
+                lits.stream()
+                        .filter(lit -> lit.getFolderId() != null && validFolderIds.contains(lit.getFolderId()))
+                        .forEach(lit -> validKeys.add(docType + "_" + lit.getId()));
+            } else if (MqConstants.DOC_TYPE_DOC.equals(docType)) {
+                List<Long> validIds = mdDocumentMapper.selectBatchIds(docIds)
+                        .stream()
+                        .filter(doc -> doc.getDeleted() == null || doc.getDeleted() == 0)
+                        .map(MdDocument::getId)
+                        .collect(Collectors.toList());
+                validIds.forEach(id -> validKeys.add(docType + "_" + id));
+            }
+        }
+
+        // 保留有效文档的 chunk（严格校验：必须有 docType 和 docId 且通过有效性检查）
+        return candidates.stream()
+                .filter(c -> c.getDocType() != null && c.getDocId() != null
+                        && validKeys.contains(c.getDocType() + "_" + c.getDocId()))
+                .limit(topK)
+                .collect(Collectors.toList());
     }
 }

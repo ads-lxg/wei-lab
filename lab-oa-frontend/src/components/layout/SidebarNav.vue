@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { useConfigStore } from '@/stores/config'
+import { useAvatarUrl } from '@/hooks/useAvatar'
 import type { RouteRecordRaw } from 'vue-router'
 
 const router = useRouter()
@@ -11,6 +12,7 @@ const route = useRoute()
 const userStore = useUserStore()
 const appStore = useAppStore()
 const configStore = useConfigStore()
+const sidebarAvatarSrc = useAvatarUrl(computed(() => userStore.user?.avatar))
 
 interface MenuItem {
   path: string
@@ -170,7 +172,7 @@ onMounted(() => {
         @click="router.push('/profile')"
         :title="appStore.sidebarCollapsed ? userStore.user?.realName || userStore.user?.username : ''"
       >
-        <el-avatar :size="28" :src="userStore.user?.avatar" class="shrink-0">
+        <el-avatar :size="28" :src="sidebarAvatarSrc || userStore.user?.avatar" class="shrink-0">
           {{ (userStore.user?.realName || userStore.user?.username || 'U').charAt(0).toUpperCase() }}
         </el-avatar>
         <div v-if="!appStore.sidebarCollapsed" class="flex-1 min-w-0">

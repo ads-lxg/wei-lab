@@ -3,16 +3,18 @@ import { ref, nextTick, onMounted, onActivated, computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useUserStore } from '@/stores/user'
 import { streamChat, listSessions as fetchSessionList, deleteSession as apiDeleteSession, searchSessions as apiSearchSessions, batchDownloadCitations } from '@/api/chat'
+import { useAvatarUrl } from '@/hooks/useAvatar'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { markedHighlight } from 'marked-highlight'
-import { Plus, Search, Delete, ChatLineSquare, MagicStick, Edit, User, Promotion, VideoPause, Close, Download } from '@element-plus/icons-vue'
+import { Plus, Search, Delete, ChatLineSquare, MagicStick, Edit, User, Promotion, VideoPause, Close, Download, CopyDocument, Brush } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { escapeHtml, isDangerousUrl } from '@/utils/sanitize'
 import type { LocalMessage } from '@/stores/chat'
 import type { Citation } from '@/types'
 
-// Configure marked
+// Configure marked：高亮代码 + 消毒危险链接
 marked.use(
   markedHighlight({
     langPrefix: 'hljs language-',
@@ -24,17 +26,40 @@ marked.use(
     },
   }),
 )
+const renderer = new marked.Renderer()
+renderer.link = ({ href, title, text }) => {
+  const safeHref = isDangerousUrl(href) ? '#' : href
+  return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer"${title ? ` title="${escapeHtml(title)}"` : ''}>${text}</a>`
+}
+marked.use({ renderer })
 marked.setOptions({ breaks: true, gfm: true })
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
-const userAvatar = computed(() => userStore.user?.avatar || '')
+const userAvatar = useAvatarUrl(computed(() => userStore.user?.avatar))
 const input = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
 const loading = ref(false)
 const editingMsgIdx = ref(-1)
 const editInput = ref('')
+
+// ===== 对话风格选择 =====
+type ChatStyle = 'default' | 'bubble' | 'anime' | 'minimal' | 'cyber' | 'academic'
+const chatStyleOptions: { value: ChatStyle; label: string }[] = [
+  { value: 'default', label: '默认' },
+  { value: 'bubble', label: '气泡' },
+  { value: 'anime', label: '动漫' },
+  { value: 'minimal', label: '极简' },
+  { value: 'cyber', label: '赛博朋克' },
+  { value: 'academic', label: '学术' },
+]
+const chatStyle = ref<ChatStyle>((localStorage.getItem('chatStyle') as ChatStyle) || 'default')
+function setChatStyle(style: ChatStyle) {
+  chatStyle.value = style
+  localStorage.setItem('chatStyle', style)
+}
+const chatStyleLabel = computed(() => chatStyleOptions.find(o => o.value === chatStyle.value)?.label || '默认')
 
 // ===== 左侧历史对话 =====
 interface SessionItem { sessionId: string; title: string; createTime: string; updateTime: string; messageCount?: number }
@@ -163,8 +188,8 @@ const excerptHtml = ref('')
 
 /** 点击"查看"按钮：浮窗显示引用片段（无遮罩，滚轮可穿透） */
 function viewCitationExcerpt(cite: Citation) {
-  const excerpt = cite.excerpt || '暂无片段内容'
-  excerptTitle.value = `引用片段 - ${cite.fileName || '未知文档'}`
+  const excerpt = escapeHtml(cite.excerpt || '暂无片段内容')
+  excerptTitle.value = `引用片段 - ${escapeHtml(cite.fileName || '未知文档')}`
   excerptHtml.value = `<div style="max-height:300px;overflow-y:auto;font-size:13px;line-height:1.8;white-space:pre-wrap;word-break:break-all;">${excerpt}</div>`
   excerptVisible.value = true
 }
@@ -172,13 +197,13 @@ function viewCitationExcerpt(cite: Citation) {
 /** 点击"查看"按钮（多片段）：浮窗显示同一文献的多个引用片段 */
 function viewCitationExcerpts(citations: Citation[]) {
   const sections = citations.map((c, i) => {
-    const excerpt = c.excerpt || '暂无片段内容'
+    const excerpt = escapeHtml(c.excerpt || '暂无片段内容')
     return `<div style="margin-bottom:12px;padding-bottom:12px;${i < citations.length - 1 ? 'border-bottom:1px dashed var(--border-color)' : ''}">
       <div style="font-weight:600;color:var(--text-muted);margin-bottom:4px;">片段 ${c.referenceNumber}</div>
       <div style="font-size:13px;line-height:1.8;white-space:pre-wrap;word-break:break-all;">${excerpt}</div>
     </div>`
   }).join('')
-  excerptTitle.value = `引用片段 - ${citations[0]?.fileName || '未知文档'}`
+  excerptTitle.value = `引用片段 - ${escapeHtml(citations[0]?.fileName || '未知文档')}`
   excerptHtml.value = `<div style="max-height:400px;overflow-y:auto;">${sections}</div>`
   excerptVisible.value = true
 }
@@ -219,6 +244,44 @@ async function handleBatchDownload(citations: Citation[]) {
     ElMessage.success('下载完成')
   } catch {
     ElMessage.error('下载失败')
+  }
+}
+
+/** 复制消息内容（兼容非HTTPS环境的fallback方案） */
+async function handleCopyMessage(msg: LocalMessage) {
+  const text = msg.content || ''
+  if (!text) {
+    ElMessage.warning('无可复制的内容')
+    return
+  }
+  // 优先使用 Clipboard API
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      ElMessage.success('已复制')
+      return
+    } catch { /* 回退到 execCommand */ }
+  }
+  // Fallback: 使用 textarea + execCommand（兼容 HTTP/非安全上下文）
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    const success = document.execCommand('copy')
+    if (success) {
+      ElMessage.success('已复制')
+    } else {
+      ElMessage.error('复制失败')
+    }
+  } catch {
+    ElMessage.error('复制失败')
+  } finally {
+    document.body.removeChild(textarea)
   }
 }
 
@@ -480,56 +543,61 @@ onActivated(async () => {
             <el-icon :size="16"><MagicStick /></el-icon>
           </div>
 
-          <!-- Bubble -->
-          <div
-            class="max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
-            :class="msg.role === 'user' ? 'bg-primary-500 text-white rounded-br-md' : 'rounded-bl-md'"
-            :style="msg.role === 'assistant' ? { background: 'var(--bg-hover)', color: 'var(--text-primary)' } : {}"
-          >
-            <!-- Edit mode -->
-            <template v-if="editingMsgIdx === idx">
-              <el-input v-model="editInput" type="textarea" :rows="2" size="small" class="mb-2" />
-              <div class="flex gap-1">
-                <el-button size="small" type="primary" @click="handleRegenerate" :disabled="!editInput.trim() || chatStore.isStreaming">重新生成</el-button>
-                <el-button size="small" @click="cancelEdit">取消</el-button>
-              </div>
-            </template>
+          <!-- Bubble + action buttons column -->
+          <div class="max-w-[75%] flex flex-col group" :class="msg.role === 'user' ? 'items-end' : 'items-start'">
+            <div
+              class="px-4 py-3 text-sm leading-relaxed msg-bubble"
+              :class="[
+                msg.role === 'user' ? 'msg-user' : 'msg-assistant',
+                `style-${chatStyle}`,
+              ]"
+            >
+              <!-- Edit mode -->
+              <template v-if="editingMsgIdx === idx">
+                <el-input v-model="editInput" type="textarea" :rows="2" size="small" class="mb-2" />
+                <div class="flex gap-1">
+                  <el-button size="small" type="primary" @click="handleRegenerate" :disabled="!editInput.trim() || chatStore.isStreaming">重新生成</el-button>
+                  <el-button size="small" @click="cancelEdit">取消</el-button>
+                </div>
+              </template>
 
-            <!-- Normal display -->
-            <template v-else>
-              <div v-if="msg.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(msg.content, msg.citations)" @click="handleCiteClick" />
-              <template v-else>{{ msg.content }}</template>
-            </template>
+              <!-- Normal display -->
+              <template v-else>
+                <div v-if="msg.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(msg.content, msg.citations)" @click="handleCiteClick" />
+                <div v-else class="bubble-text select-text">{{ msg.content }}</div>
+              </template>
 
-            <!-- Citations (clickable, grouped by same document) -->
-            <div v-if="msg.role === 'assistant' && msg.citations && msg.citations.length > 0" class="mt-3 pt-3" style="border-top: 1px solid var(--border-color)" :data-msg-idx="idx">
-              <div class="flex items-center justify-between mb-2">
-                <p class="text-xs font-medium" style="color: var(--text-muted)">参考文献 ({{ groupCitations(msg.citations).length }})</p>
-                <el-button size="small" text type="primary" :icon="Download" class="!text-[10px] !p-0" @click="handleBatchDownload(msg.citations)">批量下载</el-button>
-              </div>
-              <div
-                v-for="group in groupCitations(msg.citations)" :key="group.key"
-                :data-cite-nums="group.citations.map(c => c.referenceNumber).join(',')"
-                class="cite-item flex items-center gap-2 text-xs py-1.5 px-2 rounded transition-colors group"
-              >
-                <span
-                  class="flex-1 truncate cursor-pointer hover:text-primary-500 transition-colors"
-                  style="color: var(--text-primary)"
-                  :title="group.fileName"
-                  @click="viewCitationDetail(group.citations[0])"
-                >{{ group.fileName }}<sup class="text-primary-500 ml-0.5">{{ group.refNumbers }}</sup></span>
-                <el-button
-                  size="small" text type="primary"
-                  class="!p-0 !text-[10px] shrink-0"
-                  @click="group.citations.length === 1 ? viewCitationExcerpt(group.citations[0]) : viewCitationExcerpts(group.citations)"
-                >查看</el-button>
+              <!-- Citations (clickable, grouped by same document) -->
+              <div v-if="msg.role === 'assistant' && msg.citations && msg.citations.length > 0" class="mt-3 pt-3" style="border-top: 1px solid var(--border-color)" :data-msg-idx="idx">
+                <div class="flex items-center justify-between mb-2">
+                  <p class="text-xs font-medium" style="color: var(--text-muted)">参考文献 ({{ groupCitations(msg.citations).length }})</p>
+                  <el-button size="small" text type="primary" :icon="Download" class="!text-[10px] !p-0" @click="handleBatchDownload(msg.citations)">批量下载</el-button>
+                </div>
+                <div
+                  v-for="group in groupCitations(msg.citations)" :key="group.key"
+                  :data-cite-nums="group.citations.map(c => c.referenceNumber).join(',')"
+                  class="cite-item flex items-center gap-2 text-xs py-1.5 px-2 rounded transition-colors group"
+                >
+                  <span
+                    class="flex-1 truncate cursor-pointer hover:text-primary-500 transition-colors"
+                    style="color: var(--text-primary)"
+                    :title="group.fileName"
+                    @click="viewCitationDetail(group.citations[0])"
+                  >{{ group.fileName }}<sup class="text-primary-500 ml-0.5">{{ group.refNumbers }}</sup></span>
+                  <el-button
+                    size="small" text type="primary"
+                    class="!p-0 !text-[10px] shrink-0"
+                    @click="group.citations.length === 1 ? viewCitationExcerpt(group.citations[0]) : viewCitationExcerpts(group.citations)"
+                  >查看</el-button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- User edit button (outside bubble, before avatar) -->
-          <div v-if="msg.role === 'user' && editingMsgIdx !== idx" class="flex items-end">
-            <el-button size="small" text :icon="Edit" @click="startEdit(idx)" class="!p-1" style="color: var(--text-secondary)" title="编辑消息" />
+            <!-- Action buttons row (copy + edit, same column below bubble) -->
+            <div class="flex items-center gap-1 mt-1 transition-opacity" :class="msg.role === 'user' ? 'flex-row-reverse' : ''">
+              <el-button size="small" text :icon="CopyDocument" class="!p-1 !text-xs" style="color: var(--text-muted)" @click.stop="handleCopyMessage(msg)" title="复制内容" />
+              <el-button v-if="msg.role === 'user' && editingMsgIdx !== idx" size="small" text :icon="Edit" class="!p-1 !text-xs" style="color: var(--text-muted)" @click="startEdit(idx)" title="编辑消息" />
+            </div>
           </div>
 
           <!-- User avatar -->
@@ -569,6 +637,21 @@ onActivated(async () => {
           />
           <el-button v-if="!chatStore.isStreaming" type="primary" :icon="Promotion" :disabled="!input.trim()" @click="handleSend" />
           <el-button v-else type="danger" :icon="VideoPause" @click="handleStop">停止</el-button>
+          <!-- 风格选择器 -->
+          <el-dropdown trigger="click" @command="setChatStyle">
+            <el-button size="default" :icon="Brush" title="对话风格: {{ chatStyleLabel }}">
+              <span class="ml-1 text-xs">{{ chatStyleLabel }}</span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="opt in chatStyleOptions" :key="opt.value"
+                  :command="opt.value"
+                  :class="{ 'is-active': chatStyle === opt.value }"
+                >{{ opt.label }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </div>
@@ -595,6 +678,193 @@ onActivated(async () => {
 </template>
 
 <style scoped>
+/* ——— 选中文字高亮 ——— */
+.markdown-body :deep(*)::selection,
+.bubble-text::selection,
+.select-text::selection {
+  background: #3b82f6 !important; color: #fff !important;
+}
+.markdown-body :deep(*)::-moz-selection,
+.bubble-text::-moz-selection,
+.select-text::-moz-selection {
+  background: #3b82f6 !important; color: #fff !important;
+}
+/* 用户气泡（蓝色背景）中选中文字用亮色 */
+.msg-user .bubble-text::selection,
+.msg-user .select-text::selection {
+  background: #fbbf24 !important; color: #1e1b4b !important;
+}
+.msg-user .bubble-text::-moz-selection,
+.msg-user .select-text::-moz-selection {
+  background: #fbbf24 !important; color: #1e1b4b !important;
+}
+
+/* ============================================================
+   默认风格
+   ============================================================ */
+.style-default.msg-assistant {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px 4px 16px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.style-default.msg-user {
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 4px 16px 16px 16px;
+}
+
+/* ============================================================
+   气泡风格 — 圆润、色彩鲜明、尾巴
+   ============================================================ */
+.style-bubble.msg-assistant {
+  background: #f0f4ff;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 20px 4px 20px 20px;
+  box-shadow: 0 2px 8px rgba(59,130,246,0.10);
+}
+.style-bubble.msg-user {
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  color: #fff;
+  border-radius: 4px 20px 20px 20px;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+}
+/* 气泡风格：用户消息选中文字更亮 */
+.style-bubble .bubble-text::selection {
+  background: #fbbf24 !important; color: #1e1b4b !important;
+}
+
+/* ============================================================
+   动漫风格 — 圆角边框、柔和阴影、活泼配色
+   ============================================================ */
+.style-anime.msg-assistant {
+  background: #fff7ed;
+  color: var(--text-primary);
+  border: 2px solid #fdba74;
+  border-radius: 20px 6px 20px 20px;
+  box-shadow: 0 3px 12px rgba(251,146,60,0.15);
+}
+.style-anime.msg-user {
+  background: linear-gradient(135deg, #f472b6, #ec4899);
+  color: #fff;
+  border: 2px solid #f9a8d4;
+  border-radius: 6px 20px 20px 20px;
+  box-shadow: 0 3px 12px rgba(244,114,182,0.25);
+}
+/* 动漫风格：用户消息选中文字 */
+.style-anime .bubble-text::selection {
+  background: #fbbf24 !important; color: #831843 !important;
+}
+/* 动漫风格：助手消息代码块 */
+.style-anime .markdown-body :deep(pre) {
+  border: 1px dashed #fdba74;
+}
+
+/* ============================================================
+   极简风格 — 无边框、无阴影、纯净留白
+   ============================================================ */
+.style-minimal.msg-assistant {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  border-left: 3px solid #94a3b8;
+  padding-left: 16px;
+}
+.style-minimal.msg-user {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  border-left: 3px solid #3b82f6;
+  padding-left: 16px;
+}
+.style-minimal .bubble-text {
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   赛博朋克风格 — 霓虹光效、暗色背景、科技感
+   ============================================================ */
+.style-cyber.msg-assistant {
+  background: linear-gradient(135deg, #0f172a, #1e1b4b);
+  color: #a5f3fc;
+  border: 1px solid #06b6d4;
+  border-radius: 4px 16px 16px 16px;
+  box-shadow: 0 0 12px rgba(6,182,212,0.3), inset 0 0 8px rgba(6,182,212,0.05);
+}
+.style-cyber.msg-user {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #f0abfc;
+  border: 1px solid #c084fc;
+  border-radius: 16px 4px 16px 16px;
+  box-shadow: 0 0 12px rgba(168,85,247,0.4);
+}
+.style-cyber .bubble-text::selection {
+  background: #06b6d4 !important; color: #0f172a !important;
+}
+.style-cyber .markdown-body :deep(code) {
+  background: rgba(6,182,212,0.15); color: #67e8f9;
+}
+.style-cyber .markdown-body :deep(pre) {
+  background: #020617; border: 1px solid #06b6d4; color: #a5f3fc;
+  box-shadow: 0 0 8px rgba(6,182,212,0.2);
+}
+.style-cyber .markdown-body :deep(a) {
+  color: #22d3ee;
+}
+/* 赛博朋克风格：参考文献文件名用高对比度洋红/白色，避免与青色背景撞色 */
+.style-cyber .cite-item span {
+  color: #f0abfc !important;
+  text-shadow: 0 0 4px rgba(240, 171, 252, 0.4);
+}
+.style-cyber .cite-item:hover {
+  background: rgba(6, 182, 212, 0.12);
+}
+.style-cyber .cite-item sup {
+  color: #ffffff !important;
+}
+
+/* ============================================================
+   学术风格 — 正式、衬线字体、论文质感
+   ============================================================ */
+.style-academic.msg-assistant {
+  background: #fefce8;
+  color: #422006;
+  border: 1px solid #ca8a04;
+  border-radius: 2px 2px 2px 2px;
+  box-shadow: none;
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+.style-academic.msg-user {
+  background: #1c1917;
+  color: #fef3c7;
+  border: 1px solid #78716c;
+  border-radius: 2px 2px 2px 2px;
+  box-shadow: none;
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+.style-academic .bubble-text {
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+.style-academic .markdown-body :deep(p) {
+  text-indent: 2em; line-height: 1.8;
+}
+.style-academic .markdown-body :deep(code) {
+  background: rgba(202,138,4,0.1); color: #854d0e;
+}
+.style-academic .markdown-body :deep(pre) {
+  background: #292524; color: #fef3c7; border: 1px solid #78716c;
+}
+.style-academic .markdown-body :deep(blockquote) {
+  border-left: 3px solid #ca8a04; background: rgba(202,138,4,0.05);
+}
+
+/* ——— Markdown 渲染 ——— */
 .markdown-body :deep(h1) { font-size: 1.4em; font-weight: 700; margin: 0.6em 0 0.3em; }
 .markdown-body :deep(h2) { font-size: 1.2em; font-weight: 600; margin: 0.5em 0 0.3em; }
 .markdown-body :deep(h3) { font-size: 1.1em; font-weight: 600; margin: 0.4em 0 0.2em; }
@@ -642,7 +912,7 @@ onActivated(async () => {
   transition: background 0.3s;
 }
 
-/* 引用片段浮窗：pointer-events:none 让滚轮穿透到聊天区域 */
+/* 引用片段浮窗 */
 .excerpt-overlay {
   position: fixed;
   inset: 0;

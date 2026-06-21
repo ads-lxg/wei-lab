@@ -26,6 +26,9 @@ export interface PageQuery {
 export interface LoginDTO {
   username: string
   password: string
+  captchaId?: string
+  captchaAnswer?: string
+  deviceType?: string
 }
 
 export interface RegisterDTO {
@@ -139,6 +142,7 @@ export interface FolderTreeVO {
   path: string
   levelNo: number
   sortOrder: number
+  documentCount: number
   children: FolderTreeVO[]
   documents?: FolderDocumentVO[]
 }
@@ -161,6 +165,7 @@ export interface LiteratureListItemVO {
   keywords: string
   publishDate: string
   sourceJournal: string
+  doi: string
   folderId: number
   folderName: string
   fileType: string
@@ -171,7 +176,6 @@ export interface LiteratureListItemVO {
 
 export interface LiteratureDetailVO extends LiteratureListItemVO {
   abstractText: string
-  doi: string
   uploaderId: number
   uploaderName: string
   viewCount: number
@@ -200,6 +204,7 @@ export interface DocumentSearchDTO extends PageQuery {
   keyword?: string
   sortField?: string
   sortOrder?: string
+  searchMode?: 'bm25' | 'knn' | 'hybrid'
 }
 
 export interface DocumentBatchDeleteDTO {
@@ -218,7 +223,18 @@ export interface DocumentBatchRecoverDTO {
 export interface BatchUploadResultVO {
   successCount: number
   failCount: number
-  failList: { fileName: string; reason: string }[]
+  failList: {
+    fileName: string
+    title?: string
+    authors?: string
+    keywords?: string
+    abstractText?: string
+    publishDate?: string
+    sourceJournal?: string
+    doi?: string
+    ragSource?: number
+    reason: string
+  }[]
   successIds: number[]
 }
 
@@ -272,9 +288,8 @@ export interface SearchResult {
 }
 
 export interface SearchHit {
-  id: string
+  docId: string
   docType: string
-  docId: number
   fileName: string
   title: string
   content: string

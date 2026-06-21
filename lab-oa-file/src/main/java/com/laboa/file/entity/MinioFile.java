@@ -38,6 +38,12 @@ public class MinioFile {
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updateTime;
+
     @TableLogic(value = "0", delval = "1")
     private Integer deleted;
+
+    /** 逻辑删除时间（定时清理任务根据此字段判断） */
+    private LocalDateTime deletedTime;
 }

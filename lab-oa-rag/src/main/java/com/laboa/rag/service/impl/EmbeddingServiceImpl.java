@@ -63,6 +63,12 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     private volatile float[] zeroVector;
     /** API 是否可用（启动时检测） */
     private volatile boolean apiAvailable = true;
+    /** API 不可用时的冷却时间戳(ms)，过期后自动重试 */
+    private volatile long lastFailTime = 0L;
+    /** 冷却时间(ms) - 60秒后自动重试，避免一次启动失败导致永久禁用 */
+    private static final long COOLDOWN_MS = 60_000;
+    /** API key 是否为占位符（永久禁用，不重试） */
+    private volatile boolean apiKeyInvalid = false;
 
     @PostConstruct
     public void init() {
@@ -88,17 +94,19 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         log.info("EmbeddingService 初始化完成, endpoint={}, model={}, dimension={}, apiKey={}",
                 endpoint, model, dimension, maskedKey);
 
-        // 预检测：API key 是占位符或无意义值时直接标记为不可用
+        // 预检测：API key 是占位符或无意义值时直接标记为永久不可用
         if (apiKey == null || apiKey.isBlank()
                 || apiKey.contains("你的")
                 || apiKey.startsWith("sk-Zyx")  // 默认占位符
                 || apiKey.equals("sk-你的阿里云DashScope密钥")) {
-            log.warn("Embedding API key 未配置，Embedding 将跳过（返回零向量）。请设置环境变量 DASHSCOPE_API_KEY");
+            log.warn("Embedding API key 未配置或为占位符，Embedding 将永久跳过（返回零向量）。请设置环境变量 DASHSCOPE_API_KEY");
             apiAvailable = false;
+            apiKeyInvalid = true;
             return;
         }
 
         // 快速 ping 检测 API 是否可达（DashScope 原生 API 格式）
+        // 注意：ping 失败不永久禁用，只进入冷却期，60秒后自动重试
         try {
             Map<String, Object> pingBody = new HashMap<>();
             pingBody.put("model", model);
@@ -111,12 +119,13 @@ public class EmbeddingServiceImpl implements EmbeddingService {
                     .bodyValue(pingBody)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(Duration.ofSeconds(5))
                     .block();
             log.info("Embedding API 可达性检测通过");
         } catch (Exception e) {
-            log.warn("Embedding API 不可达: {}，Embedding 将降级运行（返回零向量）", e.getMessage());
+            log.warn("Embedding API 启动时不可达: {}。进入冷却期（{}秒后自动重试），Embedding 临时降级", e.getMessage(), COOLDOWN_MS / 1000);
             apiAvailable = false;
+            lastFailTime = System.currentTimeMillis();
         }
     }
 
@@ -143,31 +152,64 @@ public class EmbeddingServiceImpl implements EmbeddingService {
 
     /**
      * 带重试的嵌入API调用
-     * 如果 API 被标记为不可用（apiAvailable=false），直接返回零向量，避免无效等待
+     * 改进：
+     * 1. API key 无效时永久返回零向量（不重试）
+     * 2. ping 失败/临时错误时进入冷却期，60秒后自动重试（避免永久禁用）
+     * 3. 区分致命错误（401/403）和临时错误（5xx/网络），只有致命错误才长时间冷却
      */
     private List<float[]> callEmbeddingApiWithRetry(List<String> texts) {
-        // API 不可用时快速短路：直接返回零向量，避免超时等待
+        // API key 无效：永久返回零向量，不重试
+        if (apiKeyInvalid) {
+            log.debug("Embedding API key 无效，返回零向量 ({} 条)", texts.size());
+            return zeroVectorList(texts.size());
+        }
+
+        // API 不可用（ping失败或之前出错）：检查冷却期是否已过
         if (!apiAvailable) {
-            log.debug("Embedding API 不可用，返回零向量 ({} 条)", texts.size());
-            List<float[]> fallback = new ArrayList<>();
-            for (int i = 0; i < texts.size(); i++) {
-                fallback.add(new float[dimension]);
+            long elapsed = System.currentTimeMillis() - lastFailTime;
+            if (elapsed < COOLDOWN_MS) {
+                log.debug("Embedding API 冷却中（剩余{}秒），返回零向量 ({} 条)",
+                        (COOLDOWN_MS - elapsed) / 1000, texts.size());
+                return zeroVectorList(texts.size());
             }
-            return fallback;
+            // 冷却期已过，尝试重新调用
+            log.info("Embedding API 冷却期已过，尝试重新调用...");
+            apiAvailable = true;
         }
 
         Exception lastException = null;
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                return callEmbeddingApi(texts);
+                List<float[]> result = callEmbeddingApi(texts);
+                // 调用成功，确保 apiAvailable 为 true
+                if (!apiAvailable) {
+                    log.info("Embedding API 恢复正常！");
+                    apiAvailable = true;
+                }
+                return result;
             } catch (WebClientResponseException e) {
                 lastException = e;
-                // 即使是 200 也可能抛 WebClientResponseException（如 body 解析失败），打印完整响应体
+                int httpCode = e.getStatusCode().value();
                 log.warn("嵌入API调用失败(第{}/{}次): HTTP {} {}, body={}",
                         attempt, MAX_RETRIES, e.getStatusCode(), e.getStatusText(),
                         e.getResponseBodyAsString().length() > 300
                                 ? e.getResponseBodyAsString().substring(0, 300) + "..."
                                 : e.getResponseBodyAsString());
+                // 401/403：API key 无效，致命错误，进入冷却
+                if (httpCode == 401 || httpCode == 403) {
+                    log.error("Embedding API 认证失败(HTTP {})，进入冷却期。请检查 API Key", httpCode);
+                    apiAvailable = false;
+                    lastFailTime = System.currentTimeMillis();
+                    return zeroVectorList(texts.size());
+                }
+                // 429：限流，进入冷却
+                if (httpCode == 429) {
+                    log.warn("Embedding API 限流(429)，进入冷却期");
+                    apiAvailable = false;
+                    lastFailTime = System.currentTimeMillis();
+                    return zeroVectorList(texts.size());
+                }
+                // 其他 4xx：请求格式错误，不冷却（下次重试）
                 if (attempt < MAX_RETRIES) {
                     try { Thread.sleep(RETRY_DELAY_MS * attempt); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
@@ -185,9 +227,18 @@ public class EmbeddingServiceImpl implements EmbeddingService {
                 }
             }
         }
-        log.error("嵌入API调用最终失败，返回零向量降级", lastException);
+        // 所有重试失败：临时错误（网络/5xx），进入短冷却，但不永久禁用
+        log.error("嵌入API调用最终失败，返回零向量降级（{}秒后自动重试）: {}",
+                COOLDOWN_MS / 1000, lastException != null ? lastException.getMessage() : "unknown");
+        apiAvailable = false;
+        lastFailTime = System.currentTimeMillis();
+        return zeroVectorList(texts.size());
+    }
+
+    /** 生成零向量列表（用于降级） */
+    private List<float[]> zeroVectorList(int count) {
         List<float[]> fallback = new ArrayList<>();
-        for (int i = 0; i < texts.size(); i++) {
+        for (int i = 0; i < count; i++) {
             fallback.add(new float[dimension]);
         }
         return fallback;

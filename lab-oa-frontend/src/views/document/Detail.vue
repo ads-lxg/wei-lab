@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getDocumentDetail, getDownloadUrl, getPreviewUrl } from '@/api/document'
+import { getToken } from '@/utils/token'
 import { WarningFilled, Document, Reading, CollectionTag, Download, View, CopyDocument, ArrowLeft } from '@element-plus/icons-vue'
 import type { LiteratureDetailVO } from '@/types'
 
@@ -23,12 +24,20 @@ async function fetchDetail() {
   loading.value = true
   try {
     doc.value = await getDocumentDetail(id)
-    // If PDF, try to get preview URL
+    // If PDF, fetch file blob with auth token and create object URL for iframe
     if (isPdf.value) {
       try {
-        const url = await getPreviewUrl(id)
-        pdfUrl.value = url
-        showPdf.value = true
+        const previewApiUrl = await getPreviewUrl(id)
+        // previewApiUrl is relative like "/api/file/{id}/stream"
+        const token = getToken()
+        const resp = await fetch(previewApiUrl, {
+          headers: { Authorization: token || '' }
+        })
+        if (resp.ok) {
+          const blob = await resp.blob()
+          pdfUrl.value = URL.createObjectURL(blob)
+          showPdf.value = true
+        }
       } catch { /* preview not critical */ }
     }
   } catch {
@@ -38,11 +47,44 @@ async function fetchDetail() {
   }
 }
 
+// Cleanup object URL on unmount
+onUnmounted(() => {
+  if (pdfUrl.value && pdfUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(pdfUrl.value)
+  }
+})
+
 async function handleDownload() {
   downloading.value = true
   try {
     const url = await getDownloadUrl(id)
-    window.open(url, '_blank')
+    // 使用 fetch 携带 token 下载，避免 window.open 导致 401
+    const token = getToken()
+    const resp = await fetch(url, {
+      headers: { Authorization: token || '' }
+    })
+    if (!resp.ok) {
+      ElMessage.error('下载失败：' + resp.status)
+      return
+    }
+    const blob = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    // 从 Content-Disposition 提取文件名，兜底用原始文件名
+    const disposition = resp.headers.get('Content-Disposition') || ''
+    let fileName = doc.value?.fileName || 'download'
+    const match = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/)
+    if (match) {
+      fileName = decodeURIComponent(match[1])
+    }
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(blobUrl)
+  } catch (e) {
+    ElMessage.error('下载失败')
   } finally { downloading.value = false }
 }
 

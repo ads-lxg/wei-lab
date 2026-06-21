@@ -113,4 +113,9 @@ public interface DocumentManagementService {
      * @return 文献ID->解析状态映射
      */
     Map<Long, String> batchGetParseStatus(List<Long> documentIds);
+
+    /**
+     * 获取仪表盘统计数据（仅统计未删除且不在回收站的文献）
+     */
+    Map<String, Object> getDashboardStats();
 }

@@ -61,8 +61,11 @@ sa-token:
   token-name: Authorization
   timeout: 86400
   active-timeout: 1800
+  # 同端互斥登录：允许不同设备同时在线，但同设备只允许一个会话
   is-concurrent: true
   is-share: false
+  is-read-cookie: false
+  is-read-header: true
   token-style: tik
   is-log: false
   jwt-secret-key: ${JWT_SECRET:lab-oa-secret-key-change-in-production}
@@ -93,6 +96,11 @@ knife4j:
 
 server:
   port: ${SERVER_PORT:8080}
+
+# CORS 跨域配置：生产环境务必设置为前端部署域名，如 https://your-domain.com
+# 多个来源用逗号分隔；留空表示允许任意来源访问，但不允许携带凭证（ cookies / Authorization header ）
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:}
 
 # 文件分片上传配置
 upload:

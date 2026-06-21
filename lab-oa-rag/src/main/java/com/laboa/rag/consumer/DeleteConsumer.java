@@ -44,6 +44,7 @@ public class DeleteConsumer {
             Long resourceId = node.has("resourceId") ? node.get("resourceId").asLong() : null;
             String docType = node.has("docType") ? node.get("docType").asText() : null;
             Long fileId = node.has("fileId") ? node.get("fileId").asLong() : null;
+            boolean permanent = node.has("permanent") && node.get("permanent").asBoolean(false);
 
             if (resourceId == null || docType == null) {
                 log.warn("消息格式错误，丢弃: body={}", body);
@@ -51,9 +52,9 @@ public class DeleteConsumer {
                 return;
             }
 
-            log.info("收到删除消息: resourceId={}, docType={}, fileId={}", resourceId, docType, fileId);
+            log.info("收到删除消息: resourceId={}, docType={}, fileId={}, permanent={}", resourceId, docType, fileId, permanent);
 
-            // 1. 删除 ES 向量索引（doc_chunks）
+            // 1. 删除 ES 向量索引（doc_chunks）— 逻辑删除和物理删除都需要
             try {
                 vectorStoreService.deleteByDocId(docType, resourceId);
                 log.info("ES doc_chunks 删除完成: resourceId={}, docType={}", resourceId, docType);
@@ -62,7 +63,7 @@ public class DeleteConsumer {
                         resourceId, docType, e.getMessage(), e);
             }
 
-            // 2. 删除 ES 文本索引（resource_text）
+            // 2. 删除 ES 文本索引（resource_text）— 逻辑删除和物理删除都需要
             try {
                 resourceTextService.deleteByResourceId(resourceId, docType);
                 log.info("ES resource_text 删除完成: resourceId={}, docType={}", resourceId, docType);
@@ -71,8 +72,8 @@ public class DeleteConsumer {
                         resourceId, docType, e.getMessage(), e);
             }
 
-            // 3. 删除 MinIO 文件
-            if (fileId != null) {
+            // 3. 删除 MinIO 文件 — 仅物理删除时执行（逻辑删除保留MinIO文件，恢复时需要重新索引）
+            if (permanent && fileId != null) {
                 try {
                     MinioFile minioFile = minioFileMapper.selectById(fileId);
                     if (minioFile != null) {
@@ -84,17 +85,19 @@ public class DeleteConsumer {
                                 .bucket(minioFile.getBucket())
                                 .object(minioFile.getStoredName())
                                 .build());
-                        log.info("MinIO文件删除完成: fileId={}, storedName={}", fileId, minioFile.getStoredName());
+                        log.info("MinIO文件删除完成(物理删除): fileId={}, storedName={}", fileId, minioFile.getStoredName());
                     }
                 } catch (Exception e) {
                     // MinIO 对象不存在（RemoveObject 可能抛异常），不阻塞 ack
                     log.warn("MinIO文件删除异常（可能已不存在）: fileId={}, error={}", fileId, e.getMessage());
                 }
+            } else if (!permanent) {
+                log.info("逻辑删除，保留MinIO文件（恢复时需重新索引ES）: resourceId={}", resourceId);
             }
 
             // 全部完成，确认
             channel.basicAck(deliveryTag, false);
-            log.info("删除消息处理完成: resourceId={}, docType={}", resourceId, docType);
+            log.info("删除消息处理完成: resourceId={}, docType={}, permanent={}", resourceId, docType, permanent);
 
         } catch (Exception e) {
             log.error("删除消息处理失败，重新入队: error={}", e.getMessage(), e);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listByFolder, searchDocuments } from '@/api/document'
+import { getDashboardStats } from '@/api/document'
 import { getFolderTree } from '@/api/folder'
 import type { LiteratureListItemVO } from '@/types'
 
@@ -16,7 +16,6 @@ const stats = ref({
 
 const recentUploads = ref<LiteratureListItemVO[]>([])
 const hotDocuments = ref<LiteratureListItemVO[]>([])
-const recentDownloads = ref<LiteratureListItemVO[]>([])
 const loading = ref(true)
 
 async function loadDashboard() {
@@ -26,25 +25,13 @@ async function loadDashboard() {
     const tree = await getFolderTree()
     stats.value.totalFolders = countFolders(tree)
 
-    // Load recent documents across all folders
-    const result = await searchDocuments({ page: 1, size: 5, sortField: 'createTime', sortOrder: 'desc' })
-    recentUploads.value = result.records
-
-    // Calculate stats from recent uploads
-    stats.value.totalDocuments = result.total
-    stats.value.totalDownloads = recentUploads.value.reduce((sum, d) => sum + (d.downloadCount || 0), 0)
-
-    // Hot documents
-    const hot = await searchDocuments({ page: 1, size: 5, sortField: 'downloadCount', sortOrder: 'desc' })
-    hotDocuments.value = hot.records
-
-    // Simulated today count (backend doesn't have a direct API, use a rough estimate)
-    stats.value.todayNewDocuments = recentUploads.value.filter(d => {
-      if (!d.createTime) return false
-      return d.createTime.startsWith(new Date().toISOString().slice(0, 10))
-    }).length
-
-    recentDownloads.value = hot.records.slice(0, 5)
+    // Load dashboard stats from backend (excludes deleted/recycled)
+    const res = await getDashboardStats()
+    stats.value.totalDocuments = res.totalDocuments
+    stats.value.todayNewDocuments = res.todayNewDocuments
+    stats.value.totalDownloads = res.totalDownloads
+    hotDocuments.value = res.hotDocuments || []
+    recentUploads.value = res.recentUploads || []
   } catch {
     // Ignore errors on dashboard
   } finally {

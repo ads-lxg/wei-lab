@@ -62,18 +62,36 @@ public class RagFolderServiceImpl implements RagFolderService {
         Map<Long, List<Literature>> docsByFolder = allDocs.stream()
                 .collect(Collectors.groupingBy(Literature::getFolderId));
 
-        // 3. 将文献信息填充到树节点
-        fillDocuments(tree, docsByFolder);
+        // 2.5 统计每个目录的文献数量（用于树节点显示）
+        Map<Long, Long> docCountByFolder = allDocs.stream()
+                .collect(Collectors.groupingBy(Literature::getFolderId, Collectors.counting()));
+
+        // 3. 将文献信息和数量填充到树节点
+        fillDocuments(tree, docsByFolder, docCountByFolder);
 
         return tree;
     }
 
     /**
      * 递归填充每个目录节点的文献列表
+     * 文献数量 = 自身 + 所有子目录的文献总和（递归计算）
      */
-    private void fillDocuments(List<FolderTreeVO> nodes, Map<Long, List<Literature>> docsByFolder) {
+    private void fillDocuments(List<FolderTreeVO> nodes, Map<Long, List<Literature>> docsByFolder,
+                               Map<Long, Long> docCountByFolder) {
         if (nodes == null) return;
         for (FolderTreeVO node : nodes) {
+            // 先递归填充子节点
+            fillDocuments(node.getChildren(), docsByFolder, docCountByFolder);
+
+            // 自身文献数量
+            long selfCount = docCountByFolder.getOrDefault(node.getId(), 0L);
+            // 加上所有子目录的文献数量（已递归计算）
+            long childTotal = 0;
+            for (FolderTreeVO child : node.getChildren()) {
+                childTotal += child.getDocumentCount();
+            }
+            node.setDocumentCount(selfCount + childTotal);
+
             List<Literature> docs = docsByFolder.getOrDefault(node.getId(), List.of());
             for (Literature doc : docs) {
                 FolderTreeVO.FolderDocumentVO docVO = new FolderTreeVO.FolderDocumentVO();
@@ -84,7 +102,6 @@ public class RagFolderServiceImpl implements RagFolderService {
                 docVO.setParseStatus(doc.getParseStatus());
                 node.getDocuments().add(docVO);
             }
-            fillDocuments(node.getChildren(), docsByFolder);
         }
     }
 
@@ -177,7 +194,16 @@ public class RagFolderServiceImpl implements RagFolderService {
             throw new BusinessException(ErrorCode.FOLDER_HAS_CHILDREN);
         }
 
-        // 3. 逻辑删除（MyBatis Plus 自动处理 deleted 字段）
+        // 3. 检查目录下是否存在文献（防止删除目录后产生孤儿文献）
+        Long docCount = literatureMapper.selectCount(
+                new LambdaQueryWrapper<Literature>()
+                        .eq(Literature::getFolderId, id)
+        );
+        if (docCount > 0) {
+            throw new BusinessException(ErrorCode.FOLDER_HAS_DOCUMENTS);
+        }
+
+        // 4. 逻辑删除（MyBatis Plus 自动处理 deleted 字段）
         ragFolderMapper.deleteById(id);
 
         log.info("删除目录成功: id={}, name={}", id, folder.getFolderName());

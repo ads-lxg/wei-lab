@@ -118,7 +118,7 @@ public class ChatServiceImpl implements ChatService {
                 if (excerpt != null && excerpt.length() > 200) {
                     excerpt = excerpt.substring(0, 200) + "...";
                 }
-                builtCitations.add(new Citation(i + 1, doc.getFileName(), doc.getSourcePath(), doc.getChunkIndex(), excerpt, doc.getDocType(), doc.getDocId()));
+                builtCitations.add(new Citation(i + 1, doc.getFileName(), doc.getSourcePath(), doc.getChunkIndex(), excerpt, doc.getDocType(), String.valueOf(doc.getDocId())));
             }
         }
         final List<Citation> citations = builtCitations;
@@ -509,20 +509,16 @@ public class ChatServiceImpl implements ChatService {
     /**
      * 检查文献/文档是否仍然存在（未被逻辑删除）
      */
-    private boolean isDocumentExists(String docType, String docIdStr) {
-        if (docIdStr == null || docType == null) return false;
+    private boolean isDocumentExists(String docType, Long docId) {
+        if (docId == null || docType == null) return false;
         try {
-            Long docId = Long.valueOf(docIdStr);
             if ("literature".equals(docType)) {
                 return literatureMapper.selectById(docId) != null;
             } else if ("doc".equals(docType)) {
                 return mdDocumentMapper.selectById(docId) != null;
             }
-        } catch (NumberFormatException e) {
-            log.warn("docId格式错误: docType={}, docId={}", docType, docIdStr);
-            return false;
         } catch (Exception e) {
-            log.warn("检查文档存在性失败: docType={}, docId={}, error={}", docType, docIdStr, e.getMessage());
+            log.warn("检查文档存在性失败: docType={}, docId={}, error={}", docType, docId, e.getMessage());
         }
         return true; // 查询失败时不阻止，让前端处理
     }

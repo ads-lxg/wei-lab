@@ -56,22 +56,47 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
         long embedTime = System.currentTimeMillis() - embedStart;
         log.info("[耗时] 向量化: {}ms, chunks={}", embedTime, chunks.size());
 
-        // 3. 构建 DTO 并存储到 ES
+        // 检查向量是否有效（非零向量）
+        // 如果 embedding API 不可用，会返回零向量，此时不应存入 ES（否则 KNN 搜索无法匹配）
+        int validCount = 0;
+        for (float[] emb : embeddings) {
+            if (isNonZeroVector(emb)) validCount++;
+        }
+        if (validCount == 0) {
+            log.warn("所有向量均为零向量（Embedding API 不可用），跳过 doc_chunks 入库: docType={}, docId={}。" +
+                    "文档仍可通过 BM25 全文检索搜索，但跨语言语义检索暂不可用。", docType, docId);
+            return;
+        }
+        if (validCount < chunks.size()) {
+            log.warn("部分向量为零向量({}/{}), 仅存储有效向量的 chunk: docType={}, docId={}",
+                    chunks.size() - validCount, chunks.size(), docType, docId);
+        }
+
+        // 3. 构建 DTO 并存储到 ES（跳过零向量的 chunk）
         long storeStart = System.currentTimeMillis();
         List<DocumentChunkDTO> chunkDTOs = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
+            float[] emb = (i < embeddings.size()) ? embeddings.get(i) : null;
+            // 跳过零向量或缺失的 embedding
+            if (emb == null || !isNonZeroVector(emb)) {
+                continue;
+            }
             DocumentChunkDTO dto = new DocumentChunkDTO();
             dto.setId(UUID.nameUUIDFromBytes((docType + "-" + docId + "-chunk-" + i).getBytes()).toString());
             dto.setContent(chunks.get(i));
-            dto.setEmbedding(i < embeddings.size() ? embeddings.get(i) : new float[2048]);
+            dto.setEmbedding(emb);
             dto.setFileName(fileName);
             dto.setSourcePath(sourcePath);
             dto.setChunkIndex(i);
             dto.setDocType(docType);
-            dto.setDocId(docId != null ? String.valueOf(docId) : null);
+            dto.setDocId(docId);
             chunkDTOs.add(dto);
         }
 
+        if (chunkDTOs.isEmpty()) {
+            log.warn("没有有效的向量 chunk 可存储，跳过 ES 入库: docType={}, docId={}", docType, docId);
+            return;
+        }
         vectorStoreService.storeChunks(chunkDTOs);
         long storeTime = System.currentTimeMillis() - storeStart;
         log.info("[耗时] ES存储: {}ms, chunks={}", storeTime, chunks.size());
@@ -129,5 +154,17 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
         }
 
         return chunks;
+    }
+
+    /**
+     * 检查向量是否为非零向量
+     * Embedding API 不可用时会返回全零向量，这种向量无法用于 KNN 搜索
+     */
+    private boolean isNonZeroVector(float[] vec) {
+        if (vec == null || vec.length == 0) return false;
+        for (float v : vec) {
+            if (v != 0f) return true;
+        }
+        return false;
     }
 }

@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.dev33.satoken.stp.StpUtil;
 import com.laboa.common.exception.BusinessException;
 import com.laboa.common.result.PageResult;
 import com.laboa.file.entity.MinioFile;
 import com.laboa.file.service.FileService;
+import org.springframework.dao.DuplicateKeyException;
 import com.laboa.security.util.JwtUtil;
 import com.laboa.system.dto.LoginDTO;
 import com.laboa.system.dto.RegisterDTO;
@@ -60,10 +62,9 @@ public class SysUserServiceImpl implements SysUserService {
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw new BusinessException("账号已被禁用");
         }
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+        // token 由 AuthController 通过 StpUtil.login() 生成
         UserVO userVO = convertToVO(user);
         LoginVO loginVO = new LoginVO();
-        loginVO.setToken(token);
         loginVO.setUser(userVO);
         return loginVO;
     }
@@ -88,7 +89,18 @@ public class SysUserServiceImpl implements SysUserService {
         user.setRealName(dto.getRealName());
         user.setPhone(dto.getPhone());
         user.setStatus(1);
-        sysUserMapper.insert(user);
+        try {
+            sysUserMapper.insert(user);
+        } catch (DuplicateKeyException e) {
+            String msg = e.getMessage();
+            if (msg != null && msg.contains("uk_email")) {
+                throw new BusinessException("邮箱已被注册");
+            }
+            if (msg != null && msg.contains("uk_username")) {
+                throw new BusinessException("用户名已存在");
+            }
+            throw new BusinessException("账号信息重复，请更换邮箱或用户名");
+        }
         // 默认注册为游客，需管理员提升为 student / teacher
         assignDefaultGuestRole(user.getId());
     }
@@ -148,6 +160,10 @@ public class SysUserServiceImpl implements SysUserService {
         );
     }
 
+    /** ADMIN角色ID和数量上限 */
+    private static final long ADMIN_ROLE_ID = 1L;
+    private static final int MAX_ADMIN_COUNT = 2;
+
     @Override
     @Transactional
     public void assignRoles(Long userId, List<Long> roleIds) {
@@ -155,6 +171,30 @@ public class SysUserServiceImpl implements SysUserService {
         if (user == null) {
             throw new BusinessException("用户不存在");
         }
+
+        // 检查是否包含ADMIN角色
+        boolean assignAdmin = roleIds != null && roleIds.contains(ADMIN_ROLE_ID);
+
+        if (assignAdmin) {
+            // 获取当前操作用户
+            Long currentUserId = Long.valueOf(StpUtil.getLoginIdAsLong());
+
+            // 禁止管理员为自己设置角色（防止误操作导致无管理员）
+            if (currentUserId.equals(userId)) {
+                throw new BusinessException("不允许为自己设置管理角色");
+            }
+
+            // 检查管理员数量是否已达上限
+            int currentAdminCount = sysUserMapper.countUsersByRoleId(ADMIN_ROLE_ID);
+            // 如果目标用户当前不是管理员，分配后将增加一位管理员
+            List<String> targetRoles = sysUserMapper.selectRoleCodesByUserId(userId);
+            boolean targetIsAdmin = targetRoles.contains("admin");
+            int newAdminCount = targetIsAdmin ? currentAdminCount : currentAdminCount + 1;
+            if (newAdminCount > MAX_ADMIN_COUNT) {
+                throw new BusinessException("管理员数量已满（最多" + MAX_ADMIN_COUNT + "个）");
+            }
+        }
+
         LambdaQueryWrapper<UserRole> deleteWrapper = new LambdaQueryWrapper<>();
         deleteWrapper.eq(UserRole::getUserId, userId);
         userRoleMapper.delete(deleteWrapper);
@@ -283,6 +323,13 @@ public class SysUserServiceImpl implements SysUserService {
             log.warn("获取头像预签名URL失败: userId={}, avatarId={}", userId, user.getAvatar(), e);
             return null;
         }
+    }
+
+    @Override
+    public boolean verifyPassword(Long userId, String password) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) return false;
+        return passwordEncoder.matches(password, user.getPassword());
     }
 
     // ==================== 私有方法 ====================

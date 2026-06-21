@@ -34,6 +34,9 @@ public class LiteratureListItemVO {
     @Schema(description = "来源期刊")
     private String sourceJournal;
 
+    @Schema(description = "DOI号")
+    private String doi;
+
     @Schema(description = "所属目录ID")
     private Long folderId;
 

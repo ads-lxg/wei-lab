@@ -3,7 +3,10 @@ import { ref, onMounted } from 'vue'
 import { listRecycleBin, recoverDocument, batchRecoverDocuments, permanentDeleteDocument, batchPermanentDeleteDocuments } from '@/api/document'
 import { ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { useFolderStore } from '@/stores/folder'
 import type { LiteratureRecycleVO, PageResult } from '@/types'
+
+const folderStore = useFolderStore()
 
 const loading = ref(false)
 const list = ref<LiteratureRecycleVO[]>([])
@@ -26,6 +29,7 @@ async function fetchData() {
 async function handleRecover(id: number | string) {
   await recoverDocument(id)
   ElMessage.success('恢复成功')
+  folderStore.fetchTree()
   fetchData()
 }
 
@@ -34,6 +38,7 @@ async function handleBatchRecover() {
   await batchRecoverDocuments({ documentIds: selectedIds.value as number[] })
   ElMessage.success('批量恢复成功')
   selectedIds.value = []
+  folderStore.fetchTree()
   fetchData()
 }
 

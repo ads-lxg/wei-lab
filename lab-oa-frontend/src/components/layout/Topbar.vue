@@ -5,11 +5,13 @@ import { useUserStore } from '@/stores/user'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { getNotifications, getUnreadCount, markAllAsRead } from '@/api/notification'
+import { useAvatarUrl } from '@/hooks/useAvatar'
 import type { Notification } from '@/types'
 
 const router = useRouter()
 const userStore = useUserStore()
 const appStore = useAppStore()
+const userAvatarSrc = useAvatarUrl(computed(() => userStore.user?.avatar))
 
 const unreadCount = ref(0)
 const notifications = ref<Notification[]>([])
@@ -146,7 +148,7 @@ function handleLogout() {
       <!-- User Menu -->
       <el-dropdown trigger="click" placement="bottom-end">
         <button class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors ml-1">
-          <el-avatar :size="28" :src="userStore.user?.avatar">
+          <el-avatar :size="28" :src="userAvatarSrc || userStore.user?.avatar">
             {{ (userStore.user?.realName || userStore.user?.username || 'U').charAt(0).toUpperCase() }}
           </el-avatar>
           <span class="text-sm font-medium text-slate-700 dark:text-zinc-200 hidden sm:inline">

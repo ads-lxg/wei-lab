@@ -17,6 +17,7 @@ public enum ErrorCode {
     FOLDER_PARENT_NOT_EXIST(4006, "父目录不存在"),
     FOLDER_MOVE_TARGET_NOT_EXIST(4007, "目标目录不存在"),
     FOLDER_MOVE_ERROR(4008, "目录移动失败"),
+    FOLDER_HAS_DOCUMENTS(4009, "目录下存在文献，请先移除或转移文献后再删除目录"),
 
     /* ---- 文献管理模块 5xxx ---- */
     DOCUMENT_NOT_EXIST(5001, "文献不存在"),

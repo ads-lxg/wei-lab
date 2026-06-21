@@ -34,6 +34,9 @@ public class FolderTreeVO {
     @Schema(description = "子目录列表")
     private List<FolderTreeVO> children = new ArrayList<>();
 
+    @Schema(description = "该目录下文献数量")
+    private Long documentCount = 0L;
+
     @Schema(description = "该目录下的文献列表（仅包含基本信息）")
     private List<FolderDocumentVO> documents = new ArrayList<>();
 

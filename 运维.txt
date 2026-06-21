@@ -1,0 +1,8 @@
+1.打包前端
+E:\code\java\WeiLab\lab-oa\lab-oa-fronted>npx vite build 
+2.打包后端
+E:\code\java\WeiLab\lab-oa>mvn clean package -DskipTests 
+3.上传前端
+E:\code\java\WeiLab\lab-oa>scp lab-oa-fronted\dist\* root@47.98.97.47:/opt/lab-oa/lab-oa-fronted/dist/
+4.上传后端
+E:\code\java\WeiLab\lab-oa>scp lab-oa-web\target\lab-oa-web-1.0.0-SNAPSHOT.jar root@47.98.97.47:/opt/lab-oa/lab-oa-web/target/

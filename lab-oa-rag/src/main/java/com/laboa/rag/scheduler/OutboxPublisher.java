@@ -47,7 +47,8 @@ public class OutboxPublisher {
         for (OutboxEvent event : events) {
             try {
                 // 根据事件类型发送到对应队列
-                if (MqConstants.EVENT_DELETE_RESOURCE.equals(event.getEventType())) {
+                if (MqConstants.EVENT_DELETE_RESOURCE.equals(event.getEventType())
+                        || MqConstants.EVENT_PERMANENT_DELETE_RESOURCE.equals(event.getEventType())) {
                     rabbitTemplate.convertAndSend(
                             MqConstants.DELETE_EXCHANGE,
                             MqConstants.DELETE_ROUTING_KEY,
