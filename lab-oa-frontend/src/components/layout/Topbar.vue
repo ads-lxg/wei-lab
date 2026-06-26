@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/user'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { getNotifications, getUnreadCount, markAllAsRead } from '@/api/notification'
+import { logout as logoutApi } from '@/api/auth'
 import { useAvatarUrl } from '@/hooks/useAvatar'
 import type { Notification } from '@/types'
 
@@ -45,7 +46,8 @@ async function handleMarkAllRead() {
   showNotifications.value = false
 }
 
-function handleLogout() {
+async function handleLogout() {
+  try { await logoutApi() } catch { /* ignore network error */ }
   userStore.logout()
   useChatStore().clearMessages()
   router.replace('/login')

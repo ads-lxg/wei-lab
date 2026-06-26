@@ -20,6 +20,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/user/login",
                         "/api/user/register",
+                        "/api/user/logout",
                         "/api/user/captcha",
                         "/api/user/captcha/check",
                         "/api/user/security-questions",

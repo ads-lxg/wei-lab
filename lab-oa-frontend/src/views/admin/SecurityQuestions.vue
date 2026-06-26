@@ -8,17 +8,17 @@ const selectedIds = ref<number[]>([])
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
-const form = ref({ id: 0, question: '', answer: '' })
+const form = ref({ id: 0, question: '', answer: '', status: 1 })
 
 function openCreate() {
   isEdit.value = false
-  form.value = { id: 0, question: '', answer: '' }
+  form.value = { id: 0, question: '', answer: '', status: 1 }
   dialogVisible.value = true
 }
 
 function openEdit(q: SecurityQuestionVO) {
   isEdit.value = true
-  form.value = { id: q.id, question: q.question, answer: q.answer }
+  form.value = { id: q.id, question: q.question, answer: q.answer, status: q.status ?? 1 }
   dialogVisible.value = true
 }
 
@@ -28,7 +28,7 @@ async function handleSave() {
     return
   }
   if (isEdit.value && form.value.id) {
-    await updateQuestion(form.value.id, { question: form.value.question, answer: form.value.answer })
+    await updateQuestion(form.value.id, { question: form.value.question, answer: form.value.answer, status: form.value.status })
     ElMessage.success('更新成功')
   } else {
     await createQuestion({ question: form.value.question, answer: form.value.answer })
@@ -36,6 +36,13 @@ async function handleSave() {
   }
   dialogVisible.value = false
   fetchData()
+}
+
+async function handleToggleStatus(row: SecurityQuestionVO) {
+  const newStatus = row.status === 1 ? 0 : 1
+  await updateQuestion(row.id, { question: row.question, answer: row.answer, status: newStatus })
+  row.status = newStatus
+  ElMessage.success(newStatus === 1 ? '已启用' : '已禁用')
 }
 
 async function handleDelete(q: SecurityQuestionVO) {
@@ -112,6 +119,15 @@ onMounted(fetchData)
           </template>
         </el-table-column>
         <el-table-column prop="answer" label="答案" width="200" show-overflow-tooltip />
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.status === 1"
+              size="small"
+              @change="handleToggleStatus(row)"
+            />
+          </template>
+        </el-table-column>
         <el-table-column label="创建时间" width="140" align="center">
           <template #default="{ row }">{{ row.createTime?.substring(0, 10) }}</template>
         </el-table-column>
@@ -132,6 +148,9 @@ onMounted(fetchData)
       <el-form size="small" label-width="60px">
         <el-form-item label="问题"><el-input v-model="form.question" placeholder="安全问题" /></el-form-item>
         <el-form-item label="答案"><el-input v-model="form.answer" placeholder="正确答案" /></el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" size="small" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

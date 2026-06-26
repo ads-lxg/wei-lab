@@ -221,6 +221,19 @@ public class AuthController {
         return Result.success();
     }
 
+    /** 退出登录：记录LOGOUT日志后注销会话，释放IP登录名额 */
+    @PostMapping("/logout")
+    public Result<Void> logout() {
+        Long userId = StpUtil.getLoginIdAsLong();
+        UserVO userVO = sysUserService.getById(userId);
+        String ip = securityService.getClientIp();
+        String device = securityService.getDeviceInfo();
+        // 记录登出日志
+        logLogin(userVO.getUsername(), userId, ip, device, "LOGOUT", null);
+        StpUtil.logout();
+        return Result.success();
+    }
+
     private void logLogin(String username, Long userId, String ip, String device, String action, String remark) {
         try {
             LoginLog log = new LoginLog();
@@ -249,15 +262,8 @@ public class AuthController {
         ) == 0;
     }
 
-    /** 统计最近24小时内活跃登录的不同IP数 */
+    /** 统计最近24小时内活跃登录的不同IP数（已登出的IP不计入） */
     private long countDistinctLoginIps(Long userId) {
-        List<LoginLog> logs = loginLogMapper.selectList(
-                new LambdaQueryWrapper<LoginLog>()
-                        .select(LoginLog::getIp)
-                        .eq(LoginLog::getUserId, userId)
-                        .eq(LoginLog::getAction, "LOGIN")
-                        .ge(LoginLog::getCreateTime, java.time.LocalDateTime.now().minusHours(24))
-        );
-        return logs.stream().map(LoginLog::getIp).distinct().count();
+        return loginLogMapper.countActiveDistinctIps(userId, java.time.LocalDateTime.now().minusHours(24));
     }
 }

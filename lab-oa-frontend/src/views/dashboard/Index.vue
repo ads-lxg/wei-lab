@@ -55,7 +55,7 @@ onMounted(loadDashboard)
   <div class="space-y-6 animate-fade-in" v-loading="loading">
     <!-- Page Header -->
     <div>
-      <h1 class="text-2xl font-bold text-slate-800 dark:text-zinc-100">仪表盘</h1>
+      <h1 class="text-2xl font-bold text-slate-800 dark:text-zinc-100">首页</h1>
       <p class="text-sm text-slate-500 dark:text-zinc-400 mt-1">文献管理与知识平台的概览</p>
     </div>
 

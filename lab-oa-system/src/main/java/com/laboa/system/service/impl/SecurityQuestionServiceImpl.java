@@ -40,14 +40,16 @@ public class SecurityQuestionServiceImpl implements SecurityQuestionService {
         if (exist == null) {
             throw new BusinessException("问题不存在");
         }
-        securityQuestionMapper.update(null,
-                new LambdaUpdateWrapper<SecurityQuestion>()
-                        .eq(SecurityQuestion::getId, question.getId())
-                        .set(SecurityQuestion::getQuestion, question.getQuestion())
-                        .set(SecurityQuestion::getAnswer, question.getAnswer())
-                        .set(SecurityQuestion::getStatus, question.getStatus())
-                        .set(SecurityQuestion::getUpdateTime, LocalDateTime.now())
-        );
+        LambdaUpdateWrapper<SecurityQuestion> wrapper = new LambdaUpdateWrapper<SecurityQuestion>()
+                .eq(SecurityQuestion::getId, question.getId())
+                .set(SecurityQuestion::getQuestion, question.getQuestion())
+                .set(SecurityQuestion::getAnswer, question.getAnswer())
+                .set(SecurityQuestion::getUpdateTime, LocalDateTime.now());
+        // 仅当传入非null的status时才更新状态（避免编辑问题时误将status置为null）
+        if (question.getStatus() != null) {
+            wrapper.set(SecurityQuestion::getStatus, question.getStatus());
+        }
+        securityQuestionMapper.update(null, wrapper);
     }
 
     @Override

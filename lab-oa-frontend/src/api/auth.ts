@@ -39,3 +39,8 @@ export function checkCaptcha(username: string): Promise<{ needCaptcha: boolean; 
 export function verifyPassword(password: string): Promise<void> {
   return post<void>('/user/verify-password', { password })
 }
+
+/** POST /api/user/logout - 退出登录 */
+export function logout(): Promise<void> {
+  return post<void>('/user/logout')
+}

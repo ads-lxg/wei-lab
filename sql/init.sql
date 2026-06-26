@@ -369,8 +369,8 @@ INSERT INTO `sys_role` (`id`, `role_code`, `role_name`, `description`) VALUES
 -- ── 完整权限定义 v3 ──
 -- 功能权限（menu）= 控制菜单可见性，数据权限（api）= 控制 API 接口访问
 INSERT INTO `sys_permission` (`id`, `perm_code`, `perm_name`, `parent_id`, `type`, `path`, `sort`) VALUES
--- 仪表盘
-(1,  'dashboard',            '仪表盘',                 0,  'menu', '/dashboard',                    1),
+-- 首页
+(1,  'dashboard',            '首页',                 0,  'menu', '/dashboard',                    1),
 -- 用户权限管理
 (2,  'user:manage',          '用户权限管理',              0,  'menu', '/user',                         2),
 (3,  'user:list',            '用户列表（查改删）',          2,  'api',  '/api/admin/user/**',              1),
@@ -412,15 +412,15 @@ INSERT INTO `user_role` (`user_id`, `role_id`) VALUES
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (1,1),(1,2),(1,3),(1,4),(1,13),(1,5),(1,6),(1,7),(1,8),(1,25),(1,9),(1,10),(1,11),(1,12),(1,16),(1,17),(1,18),(1,19),(1,20),(1,21),(1,22),(1,23),(1,24),(1,200);
 
--- teacher：仪表盘、内部文档、文献（上传/下载/查看/目录）、搜索、AI问答（不含ES验证）、通知
+-- teacher：首页、内部文档、文献（上传/下载/查看/目录）、搜索、AI问答（不含ES验证）、通知
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (2,1),(2,5),(2,6),(2,7),(2,8),(2,9),(2,10),(2,12),(2,16),(2,17),(2,18),(2,19),(2,20),(2,21),(2,22),(2,23),(2,24);
 
--- student：仪表盘、内部文档、文献（上传/下载/查看，不含目录管理和回收站）、搜索、AI问答、通知
+-- student：首页、内部文档、文献（上传/下载/查看，不含目录管理和回收站）、搜索、AI问答、通知
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (3,1),(3,5),(3,6),(3,7),(3,8),(3,9),(3,12),(3,16),(3,17),(3,18),(3,19),(3,20),(3,21),(3,22),(3,23),(3,24);
 
--- guest：仪表盘、文献查看、搜索（不可访问RAG问答、对话历史、知识储备）
+-- guest：首页、文献查看、搜索（不可访问RAG问答、对话历史、知识储备）
 INSERT INTO `role_permission` (`role_id`, `perm_id`) VALUES
 (4,1),(4,7),(4,12),(4,16),(4,17);
 

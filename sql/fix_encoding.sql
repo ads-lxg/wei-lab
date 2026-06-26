@@ -10,7 +10,7 @@ UPDATE sys_role SET role_name='教师', description='教师角色，可上传下
 UPDATE sys_role SET role_name='学生', description='学生角色，可上传下载文献，可访问内部文档' WHERE role_code='student';
 UPDATE sys_role SET role_name='游客', description='游客角色，仅可在线查看文献' WHERE role_code='guest';
 
-UPDATE sys_permission SET perm_name='仪表盘' WHERE perm_code='dashboard';
+UPDATE sys_permission SET perm_name='首页' WHERE perm_code='dashboard';
 UPDATE sys_permission SET perm_name='用户管理' WHERE perm_code='user:manage';
 UPDATE sys_permission SET perm_name='用户列表' WHERE perm_code='user:list';
 UPDATE sys_permission SET perm_name='角色分配' WHERE perm_code='user:role';
