@@ -1,3 +1,6 @@
+============================================================
+旧流程（本机构建 + scp 上传，已废弃，保留备查）
+============================================================
 1.打包前端
 E:\code\java\WeiLab\lab-oa\lab-oa-fronted>npx vite build 
 2.打包后端
@@ -6,3 +9,202 @@ E:\code\java\WeiLab\lab-oa>mvn clean package -DskipTests
 E:\code\java\WeiLab\lab-oa>scp lab-oa-fronted\dist\* root@47.98.97.47:/opt/lab-oa/lab-oa-fronted/dist/
 4.上传后端
 E:\code\java\WeiLab\lab-oa>scp lab-oa-web\target\lab-oa-web-1.0.0-SNAPSHOT.jar root@47.98.97.47:/opt/lab-oa/lab-oa-web/target/
+5.构建前后端项目
+docker compose up -d --build
+6.重启前后端项目
+docker compose restart lab-oa-app lab-oa-fronted
+配置空的服务器：
+
+============================================================
+新流程（git + Docker 一键部署，2026-10 起使用）
+============================================================
+原理：整个系统 7 个容器全部在服务器上自动构建和启动
+（MySQL 数据库 / Redis 缓存 / Elasticsearch 搜索 / MinIO 文件存储 /
+ RabbitMQ 消息队列 / Java 后端 / Nginx 前端）
+本地电脑什么都不用装，不需要 Java、不需要 Node、不需要 Maven。
+
+代码仓库：https://github.com/ads-lxg/wei-lab.git
+
+---------- 日常更新（以后改了代码上线就这 3 条）----------
+cd /opt/lab-oa
+git pull
+docker compose up -d --build
+
+---------- 部署后常用命令 ----------
+docker compose ps                     # 查看容器状态（7个都应是 running/healthy）
+docker compose logs -f lab-oa-app     # 看后端日志（Ctrl+C 退出）
+docker compose restart lab-oa-app     # 重启后端
+docker compose down                   # 停止全部容器（数据不会丢）
+docker compose up -d --build          # 启动/更新
+
+============================================================
+新空阿里云服务器从零部署指南
+（写给接手人：不需要任何 Java / AI 知识，照抄命令即可）
+============================================================
+
+【第 0 步：准备】
+- 一台阿里云 ECS 云服务器，建议 2核4G 内存、40G 磁盘以上，系统选 Ubuntu 22.04
+- 记下三样东西：服务器公网IP、root密码（买服务器时设置的）
+- 登录服务器两种方式任选：
+  A. 阿里云网页控制台 → ECS 实例 → 点"远程连接"（最简单，无需装任何软件）
+  B. 本地电脑终端执行：ssh root@服务器公网IP
+
+【第 1 步：安全组放行端口（重要！）】
+阿里云控制台 → ECS → 安全组 → 配置规则 → 入方向 → 手动添加：
+- 端口 22   来源 0.0.0.0/0   （SSH登录用）
+- 端口 80   来源 0.0.0.0/0   （网站访问用）
+只放行这两个！
+3306/6379/9200/9000/5672/8080 等是数据库和内部服务端口，
+对公网开放等于把保险箱大门敞开，扫描器几分钟就能攻进来。
+
+【第 2 步：安装 Docker】
+登录服务器后，复制粘贴执行：
+  curl -fsSL https://get.docker.com | bash
+  systemctl enable --now docker
+  docker -v
+最后显示出 Docker version 24.x 之类即成功。
+
+【必做】配置镜像加速（国内服务器直连 Docker Hub 会超时，2026-10 实测验证过的可用源）：
+  mkdir -p /etc/docker
+  cat > /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.m.daocloud.io",
+    "https://docker.1panel.live",
+    "https://docker.hpcloud.cloud"
+  ]
+}
+EOF
+  systemctl restart docker
+说明：前三个源覆盖 mysql/redis/rabbitmq/maven/node/nginx 等常见镜像；
+minio 比较特殊，只有第 4 个源（hpcloud）有，四个都配上缺一不可，
+docker 会按顺序自动尝试，不用手动干预。
+验证：docker info | grep -A 5 "Registry Mirrors" 应列出四个源。
+
+如果哪天镜像源集体失效（国内源经常变动），保底两招：
+招1：手动从可用源前缀拉取再改名，例如：
+  docker pull docker.hpcloud.cloud/library/minio:latest
+  docker tag docker.hpcloud.cloud/library/minio:latest minio/minio:latest
+招2：在自己电脑上装 Docker Desktop 拉好镜像，导出传入服务器：
+  docker save mysql:8.0 redis:7-alpine minio/minio:latest -o images.tar
+  scp images.tar root@服务器IP:/root/     （服务器上执行 docker load -i /root/images.tar）
+
+【第 3 步：下载代码】
+  cd /opt
+  git clone https://github.com/ads-lxg/wei-lab.git lab-oa
+  cd lab-oa
+说明：国内服务器连 GitHub 偶尔抽风，失败就多试几次；
+实在不行把仓库导入 Gitee 后改用 Gitee 地址 clone。
+
+【第 4 步：创建 .env 密码文件（最关键的一步）】
+代码仓库故意不含这个文件（防止密码泄露到网上），需要手动创建。
+两种方式选一：
+  方式A：向前任管理员索要 .env 文件，内容原样复制到 /opt/lab-oa/.env
+  方式B：自己生成新密码（全新服务器没有旧数据，生成新的最安全）：
+    在服务器上执行下面命令，每执行一次生成一个随机密码，共生成 4 个：
+      openssl rand -base64 24
+    然后创建文件：
+      nano /opt/lab-oa/.env
+    按下面模板填写（尖括号部分替换成自己生成的密码）：
+      ----------------------------------------
+      MYSQL_ROOT_PASSWORD=<密码1>
+      MYSQL_USER=root
+      MYSQL_PASSWORD=<密码1>
+
+      REDIS_PASSWORD=
+
+      RABBITMQ_USER=laboa
+      RABBITMQ_PASS=<密码2>
+
+      MINIO_ROOT_USER=laboa
+      MINIO_ROOT_PASSWORD=<密码3>
+      MINIO_ACCESS_KEY=laboa
+      MINIO_SECRET_KEY=<密码3>
+      MINIO_BUCKET=lab-oa
+
+      JWT_SECRET=<密码4>
+
+      DEEPSEEK_API_KEY=
+      DASHSCOPE_API_KEY=
+      ALI_EMBEDDING_API_KEY=
+
+      SPRING_PROFILES_ACTIVE=prod
+      SERVER_PORT=8080
+      ----------------------------------------
+    填写规则：
+      MYSQL_PASSWORD 必须和 MYSQL_ROOT_PASSWORD 相同
+      MINIO_ACCESS_KEY/SECRET_KEY 必须和 MINIO_ROOT_USER/PASSWORD 相同
+      DASHSCOPE_API_KEY 和 ALI_EMBEDDING_API_KEY 必须填同一个值（代码优先读前者）
+      REDIS_PASSWORD 保持为空（容器本身没设密码）
+      JWT_SECRET 可以长一点，再执行一次 openssl rand -base64 48 即可
+    保存退出（nano 中 Ctrl+O 回车保存，Ctrl+X 退出）。
+
+【第 5 步：AI 账号申请（可选，可以先跳过）】
+系统有个"智能问答"功能，需要两个 AI 服务密钥。
+不申请不影响部署，其余功能全部正常，只是智能问答用不了。
+以后想开通了再申请，填进 .env 再执行一遍 docker compose up -d 即可。
+
+1) DeepSeek（负责AI对话）：
+   - 打开 https://platform.deepseek.com ，用手机号注册
+   - 充值 10 元（能用很久，不用也会过期）
+   - 左侧菜单"API Keys"→ 创建 API Key → 复制（sk-开头，只显示一次！）
+   - 填到 .env 的 DEEPSEEK_API_KEY= 后面
+
+2) 阿里云百炼（负责文字向量化检索）：
+   - 打开 https://bailian.console.aliyun.com
+     （直接用买服务器时的阿里云账号登录即可）
+   - 按提示开通百炼服务（有免费额度）
+   - 右上角头像 → API-KEY → 创建 → 复制（sk-开头）
+   - 填到 .env 的 DASHSCOPE_API_KEY= 和 ALI_EMBEDDING_API_KEY= 后面
+     （两个变量都填，同一个值；只填一个的话向量检索可能不生效）
+
+【第 6 步：一键启动】
+  cd /opt/lab-oa
+  docker compose up -d --build
+首次构建要下载依赖并编译，约 10~30 分钟，属正常现象。
+期间可以不断用 docker compose ps 查看进度。
+7 个容器会自动按依赖顺序启动：先数据库等基础设施，再后端，最后前端。
+
+【第 7 步：验证】
+  docker compose ps
+  → 7 个容器全部 Up (healthy) 即成功
+浏览器打开：http://服务器公网IP
+  → 出现登录页即部署成功
+默认管理员账号：admin / 123456 （登录后请立即在系统里修改密码！）
+
+【常见问题排查】
+Q: 某个容器一直 restarting 或 Exited？
+   docker compose logs --tail 50 容器名     看报错
+Q: 后端起不来，日志报 Connection refused / Access denied？
+   九成是 .env 里密码填错或对应关系没对上，检查第 4 步的填写规则
+Q: 服务器只有 2G 内存，Elasticsearch 或后端被杀？
+   加虚拟内存（重启不丢失版）：
+     fallocate -l 4G /swapfile
+     chmod 600 /swapfile
+     mkswap /swapfile
+     swapon /swapfile
+     echo '/swapfile none swap sw 0 0' >> /etc/fstab
+Q: 80 端口冲突？
+   编辑 docker-compose.yml，把前端的 "80:80" 改成比如 "3000:80"，
+   重新 docker compose up -d
+Q: 改了 .env 不生效？
+   docker compose up -d 会重建相关容器，改密码后必须执行
+Q: 想看 MinIO 存储的文件？
+   不要对公网开 9001 端口，在自己电脑上建 SSH 隧道访问：
+     ssh -L 9001:localhost:9001 root@服务器IP
+   然后本地浏览器打开 http://localhost:9001，账号密码同 .env 里 MINIO 的
+
+【数据备份（建议每周）】
+  cd /opt/lab-oa
+  docker exec lab-oa-mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" lab_oa' > backup_$(date +%m%d).sql
+  （生成的 sql 文件拷回自己电脑保存；恢复用 docker exec -i lab-oa-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" lab_oa' < backup_文件名.sql）
+文件存在 MinIO 容器卷里，整盘快照（阿里云控制台→ECS→磁盘→创建快照）可一并保住。
+
+【给接手人的最后一页备忘】
+- 代码在 GitHub：https://github.com/ads-lxg/wei-lab.git
+- 服务器上代码位置：/opt/lab-oa
+- 所有密码在服务器 /opt/lab-oa/.env（此文件不进 git，删了就没人知道了，务必另存一份）
+- 网站入口：http://服务器公网IP
+- 出问题第一反应：docker compose ps + docker compose logs -f lab-oa-app
+- 万年重启大法：cd /opt/lab-oa && docker compose down && docker compose up -d --build

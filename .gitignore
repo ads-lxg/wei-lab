@@ -26,3 +26,7 @@ nohup.out
 
 .env
 *.env.local
+
+# Docker 镜像导出包（部署用，禁止入库）
+lab-oa-images.tar
+*.tar
