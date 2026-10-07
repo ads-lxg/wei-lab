@@ -82,10 +82,25 @@ minio 比较特殊，只有第 4 个源（hpcloud）有，四个都配上缺一�
 docker 会按顺序自动尝试，不用手动干预。
 验证：docker info | grep -A 5 "Registry Mirrors" 应列出四个源。
 
+【建议：预拉取本项目需要的 9 个镜像】
+说明：docker compose up 遇到缺的镜像会自动拉，但自动拉一旦被限流
+（云服务器 IP 常被镜像源暂时拒绝）整个构建就卡死，提前手动拉取最稳。
+复制下面这一整行执行（自带失败自动重试，被拒会等5秒再试）：
+  for img in mysql:8.0 redis:7-alpine rabbitmq:3.13-management-alpine minio/minio:latest maven:3.9-eclipse-temurin-17-alpine eclipse-temurin:17-jre-alpine node:20-alpine nginx:1.27-alpine; do echo "=== 拉取 $img ==="; until docker pull $img; do echo "被限流，5秒后重试..."; sleep 5; done; done
+第 9 个是 ES 搜索引擎，它不在 Docker Hub（走官方源直连，不需要加速器）：
+  docker pull docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+注意：某个镜像重试 10 次以上还失败就 Ctrl+C 停掉，
+改用下方"招1"手动换源前缀拉取那一个。
+全部拉完后核对（应能看到上面 9 个）：
+  docker images
+
 如果哪天镜像源集体失效（国内源经常变动），保底两招：
 招1：手动从可用源前缀拉取再改名，例如：
   docker pull docker.hpcloud.cloud/library/minio:latest
   docker tag docker.hpcloud.cloud/library/minio:latest minio/minio:latest
+  （换源 = 把前缀 docker.hpcloud.cloud 换成另外三个之一：
+   docker.1ms.run / docker.m.daocloud.io / docker.1panel.live，
+   哪个源有这个镜像就用哪个）
 招2：在自己电脑上装 Docker Desktop 拉好镜像，导出传入服务器：
   docker save mysql:8.0 redis:7-alpine minio/minio:latest -o images.tar
   scp images.tar root@服务器IP:/root/     （服务器上执行 docker load -i /root/images.tar）
@@ -165,6 +180,8 @@ docker 会按顺序自动尝试，不用手动干预。
 首次构建要下载依赖并编译，约 10~30 分钟，属正常现象。
 期间可以不断用 docker compose ps 查看进度。
 7 个容器会自动按依赖顺序启动：先数据库等基础设施，再后端，最后前端。
+如果这步报镜像相关错误（pull denied / timeout / not found），
+说明第 2 步的预拉取没做完整，回到上面"预拉取"章节补齐缺的那个。
 
 【第 7 步：验证】
   docker compose ps
