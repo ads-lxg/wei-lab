@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS `literature`;
 DROP TABLE IF EXISTS `rag_folder`;
 DROP TABLE IF EXISTS `download_log`;
 DROP TABLE IF EXISTS `sys_log`;
+DROP TABLE IF EXISTS `login_log`;
 DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `chat_message`;
 DROP TABLE IF EXISTS `chat_session`;
@@ -277,6 +278,24 @@ CREATE TABLE `sys_log` (
     KEY `idx_create_time` (`create_time`),
     KEY `idx_ip` (`ip`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表';
+
+-- =====================================================
+-- 登录日志表（登录IP限制功能依赖此表）
+-- =====================================================
+
+CREATE TABLE `login_log` (
+    `id` bigint NOT NULL,
+    `user_id` bigint DEFAULT NULL COMMENT '用户ID',
+    `username` varchar(64) DEFAULT NULL COMMENT '用户名',
+    `ip` varchar(64) DEFAULT NULL COMMENT '登录IP',
+    `device` varchar(256) DEFAULT NULL COMMENT '设备信息',
+    `action` varchar(32) NOT NULL COMMENT '操作类型: LOGIN/LOGOUT/LOGIN_FAIL',
+    `remark` varchar(512) DEFAULT NULL COMMENT '备注',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='登录日志表';
 
 -- =====================================================
 -- 通知表

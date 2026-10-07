@@ -180,6 +180,13 @@ docker 会按顺序自动尝试，不用手动干预。
 首次构建要下载依赖并编译，约 10~30 分钟，属正常现象。
 期间可以不断用 docker compose ps 查看进度。
 7 个容器会自动按依赖顺序启动：先数据库等基础设施，再后端，最后前端。
+数据库初始化说明（重要）：
+  MySQL 容器第一次启动时会自动执行 sql/init.sql ——
+  自动建库 lab_oa、18 张表、默认管理员 admin/123456、角色权限、题库。
+  注意：init.sql 只在"数据卷为空的第一次启动"时执行一次！
+  如果以后想彻底重建数据库（会清空全部数据，慎用）：
+    docker compose down -v
+    docker compose up -d
 如果这步报镜像相关错误（pull denied / timeout / not found），
 说明第 2 步的预拉取没做完整，回到上面"预拉取"章节补齐缺的那个。
 
@@ -191,6 +198,13 @@ docker 会按顺序自动尝试，不用手动干预。
 默认管理员账号：admin / 123456 （登录后请立即在系统里修改密码！）
 
 【常见问题排查】
+Q: 登录或某个功能报 Table 'lab_oa.xxx' doesn't exist（表不存在）？
+   数据库表缺失。sql/init.sql 已包含全部 18 张表（2026-10 修复：
+   曾漏掉 login_log 表导致登录报错），全新部署不会再缺。
+   已部署的老库补表方法（以 login_log 为例，在服务器执行）：
+     cd /opt/lab-oa
+     docker exec -i lab-oa-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" lab_oa' < sql/create_login_log.sql
+   补完立即生效，不用重启容器。
 Q: 后端构建时 Maven 下载依赖超时（Could not transfer artifact ... Connection timed out）？
    已内置解决：仓库里的 maven-settings.xml 会自动让构建走阿里云 Maven 镜像，
    服务器无需任何配置。若某天阿里云镜像抽风，把 maven-settings.xml 里的
