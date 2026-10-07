@@ -7,6 +7,9 @@ FROM maven:3.9-eclipse-temurin-17-alpine AS builder
 
 WORKDIR /build
 
+# 0. 配置阿里云 Maven 镜像（国内服务器直连中央仓库会超时）
+COPY maven-settings.xml /root/.m2/settings.xml
+
 # 1. 先复制 pom.xml 全量下载依赖（利用 Docker 缓存层）
 COPY pom.xml ./
 COPY lab-oa-common/pom.xml ./lab-oa-common/

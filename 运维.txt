@@ -191,6 +191,14 @@ docker 会按顺序自动尝试，不用手动干预。
 默认管理员账号：admin / 123456 （登录后请立即在系统里修改密码！）
 
 【常见问题排查】
+Q: 后端构建时 Maven 下载依赖超时（Could not transfer artifact ... Connection timed out）？
+   已内置解决：仓库里的 maven-settings.xml 会自动让构建走阿里云 Maven 镜像，
+   服务器无需任何配置。若某天阿里云镜像抽风，把 maven-settings.xml 里的
+   <url> 换成 https://repo.huaweicloud.com/repository/maven 再重新构建即可。
+Q: 前端构建时 npm 下载依赖慢/超时？
+   npm 一般能直连成功，慢就重跑一次（docker compose up -d --build 有缓存会续上）；
+   频繁超时可在 lab-oa-frontend/Dockerfile 的 npm ci 前加一行：
+     RUN npm config set registry https://registry.npmmirror.com
 Q: 某个容器一直 restarting 或 Exited？
    docker compose logs --tail 50 容器名     看报错
 Q: 后端起不来，日志报 Connection refused / Access denied？
