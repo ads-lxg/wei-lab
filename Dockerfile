@@ -23,7 +23,7 @@ COPY lab-oa-notification/pom.xml ./lab-oa-notification/
 COPY lab-oa-rag/pom.xml ./lab-oa-rag/
 COPY lab-oa-web/pom.xml ./lab-oa-web/
 
-RUN mvn dependency:go-offline -B -q || true
+RUN mvn dependency:go-offline -B || true
 
 # 2. 复制源码并编译打包
 COPY lab-oa-common/src ./lab-oa-common/src
@@ -37,7 +37,7 @@ COPY lab-oa-notification/src ./lab-oa-notification/src
 COPY lab-oa-rag/src ./lab-oa-rag/src
 COPY lab-oa-web/src ./lab-oa-web/src
 
-RUN mvn clean package -DskipTests -B -q
+RUN mvn clean package -DskipTests -B
 
 # ---- 阶段2：运行环境 ----
 FROM eclipse-temurin:17-jre-alpine
